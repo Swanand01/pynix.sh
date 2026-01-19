@@ -89,8 +89,8 @@ def handle_cd_command(arg):
     if not os.path.isdir(arg):
         print(f"cd: {arg}: No such file or directory")
         return
-    if os.path.isabs(arg):
-        os.chdir(arg)
+
+    os.chdir(arg)
 
 
 def handle_external_command(cmd, args):
