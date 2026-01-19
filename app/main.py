@@ -8,6 +8,7 @@ class Command(str, Enum):
     EXIT = 'exit'
     ECHO = 'echo'
     TYPE = 'type'
+    PWD = 'pwd'
 
 
 command_docs = {
@@ -22,6 +23,10 @@ command_docs = {
     Command.TYPE: {
         "description": "Displays the type of the provided argument",
         "usage": "type [arg]"
+    },
+    Command.PWD: {
+        "description": "Prints the current working directory",
+        "usage": "pwd"
     }
 }
 
@@ -46,6 +51,8 @@ def main():
                     print(f"{arg} is {file_path}")
                 else:
                     print(f"{arg}: not found")
+        elif command.split()[0] == Command.PWD:
+            print(os.getcwd())
         else:
             external_command = command.split()[0]
             file_exists, file_path = file_exists_in_path(external_command)
