@@ -9,6 +9,7 @@ class Command(str, Enum):
     ECHO = 'echo'
     TYPE = 'type'
     PWD = 'pwd'
+    CD = 'cd'
 
 
 command_docs = {
@@ -27,7 +28,11 @@ command_docs = {
     Command.PWD: {
         "description": "Prints the current working directory",
         "usage": "pwd"
-    }
+    },
+    Command.CD: {
+        "description": "Changes the current directory",
+        "usage": "cd [directory]"
+    },
 }
 
 
@@ -35,31 +40,66 @@ def main():
     while True:
         sys.stdout.write("$ ")
         command = input().strip()
+        parts = command.split()
+
+        if not parts:
+            continue
+
+        cmd = parts[0]
+        args = parts[1:]
 
         if command == Command.EXIT:
             break
-        elif command.split()[0] == Command.ECHO:
-            args = command.split()[1:]
-            print(" ".join(args))
-        elif command.split()[0] == Command.TYPE:
-            arg = command.split()[1]
-            if command_exists(arg):
-                print(f"{arg} is a shell builtin")
-            else:
-                file_exists, file_path = file_exists_in_path(arg)
-                if file_exists:
-                    print(f"{arg} is {file_path}")
-                else:
-                    print(f"{arg}: not found")
-        elif command.split()[0] == Command.PWD:
-            print(os.getcwd())
+        elif cmd == Command.ECHO:
+            handle_echo_command(args)
+        elif cmd == Command.TYPE:
+            if not args:
+                continue
+            handle_type_command(args[0])
+        elif cmd == Command.PWD:
+            handle_pwd_command()
+        elif cmd == Command.CD:
+            handle_cd_command(args[0])
         else:
-            external_command = command.split()[0]
-            file_exists, file_path = file_exists_in_path(external_command)
-            if file_exists:
-                subprocess.run([external_command, *command.split()[1:]])
-            else:
-                print(f"{external_command}: command not found")
+            handle_external_command(cmd, args)
+
+
+def handle_echo_command(args):
+    print(" ".join(args))
+
+
+def handle_type_command(arg):
+    if command_exists(arg):
+        print(f"{arg} is a shell builtin")
+        return
+
+    file_exists, file_path = file_exists_in_path(arg)
+    if not file_exists:
+        print(f"{arg}: not found")
+        return
+
+    print(f"{arg} is {file_path}")
+
+
+def handle_pwd_command():
+    print(os.getcwd())
+
+
+def handle_cd_command(arg):
+    if not os.path.isdir(arg):
+        print(f"cd: {arg}: No such file or directory")
+        return
+    if os.path.isabs(arg):
+        os.chdir(arg)
+
+
+def handle_external_command(cmd, args):
+    file_exists, _ = file_exists_in_path(cmd)
+    if not file_exists:
+        print(f"{cmd}: command not found")
+        return
+
+    subprocess.run([cmd, *args])
 
 
 def command_exists(command):
