@@ -8,7 +8,11 @@ def main():
 
         if command == "exit":
             break
-        print(f"{command}: command not found")
+        elif command.split()[0] == "echo":
+            args = command.split()[1:]
+            print(" ".join(args))
+        else:
+            print(f"{command}: command not found")
 
 
 if __name__ == "__main__":
