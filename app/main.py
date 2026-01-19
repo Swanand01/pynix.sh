@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 from enum import Enum
+from pathlib import Path
 
 
 class Command(str, Enum):
@@ -86,6 +87,11 @@ def handle_pwd_command():
 
 
 def handle_cd_command(arg):
+    if arg == "~":
+        arg = str(Path.home())
+        os.chdir(arg)
+        return
+
     if not os.path.isdir(arg):
         print(f"cd: {arg}: No such file or directory")
         return
