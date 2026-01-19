@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+import shlex
 from enum import Enum
 from pathlib import Path
 
@@ -52,7 +53,7 @@ def main():
         if command == Command.EXIT:
             break
         elif cmd == Command.ECHO:
-            handle_echo_command(args)
+            handle_echo_command(command.replace("echo ", "", 1))
         elif cmd == Command.TYPE:
             if not args:
                 continue
@@ -66,7 +67,11 @@ def main():
 
 
 def handle_echo_command(args):
-    print(" ".join(args))
+    try:
+        tokens = shlex.split(args)
+        print(' '.join(tokens))
+    except ValueError:
+        print(args)
 
 
 def handle_type_command(arg):
