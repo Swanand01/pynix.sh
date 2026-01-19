@@ -42,7 +42,11 @@ def main():
     while True:
         sys.stdout.write("$ ")
         command = input().strip()
-        parts = command.split()
+
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            parts = command.split()
 
         if not parts:
             continue
@@ -53,7 +57,7 @@ def main():
         if command == Command.EXIT:
             break
         elif cmd == Command.ECHO:
-            handle_echo_command(command.replace("echo ", "", 1))
+            handle_echo_command(args)
         elif cmd == Command.TYPE:
             if not args:
                 continue
@@ -61,17 +65,15 @@ def main():
         elif cmd == Command.PWD:
             handle_pwd_command()
         elif cmd == Command.CD:
+            if not args:
+                continue
             handle_cd_command(args[0])
         else:
             handle_external_command(cmd, args)
 
 
 def handle_echo_command(args):
-    try:
-        tokens = shlex.split(args)
-        print(' '.join(tokens))
-    except ValueError:
-        print(args)
+    print(' '.join(args))
 
 
 def handle_type_command(arg):
