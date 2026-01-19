@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 from enum import Enum
 
 
@@ -28,7 +29,7 @@ command_docs = {
 def main():
     while True:
         sys.stdout.write("$ ")
-        command = input()
+        command = input().strip()
 
         if command == Command.EXIT:
             break
@@ -46,7 +47,12 @@ def main():
                 else:
                     print(f"{arg}: not found")
         else:
-            print(f"{command}: command not found")
+            external_command = command.split()[0]
+            file_exists, file_path = file_exists_in_path(external_command)
+            if file_exists:
+                subprocess.run([file_path, *command.split()[1:]])
+            else:
+                print(f"{external_command}: command not found")
 
 
 def command_exists(command):
