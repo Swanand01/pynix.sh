@@ -50,7 +50,7 @@ def main():
             external_command = command.split()[0]
             file_exists, file_path = file_exists_in_path(external_command)
             if file_exists:
-                subprocess.run([file_path, *command.split()[1:]])
+                subprocess.run([external_command, *command.split()[1:]])
             else:
                 print(f"{external_command}: command not found")
 
