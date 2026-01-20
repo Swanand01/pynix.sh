@@ -19,8 +19,11 @@ def create_completer(builtins):
             # Remove duplicates and sort once
             matches = sorted(set(matches))
 
-            # Add space after each match for convenience
-            completer.matches = [m + " " for m in matches]
+            # Add space only if single match (auto-complete), not for display
+            if len(matches) == 1:
+                completer.matches = [matches[0] + " "]
+            else:
+                completer.matches = matches
 
         # Return the match at index 'state', or None if no more
         return completer.matches[state] if state < len(completer.matches) else None

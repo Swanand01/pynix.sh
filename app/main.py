@@ -23,8 +23,7 @@ def main():
     setup_completion(list(Command))
 
     while True:
-        sys.stdout.write("$ ")
-        command = input().strip()
+        command = input("$ ").strip()
 
         try:
             parts = shlex.split(command)
