@@ -38,6 +38,34 @@ command_docs = {
 }
 
 
+def redirect_stdout(stdout_file):
+    if stdout_file:
+        original = sys.stdout
+        sys.stdout = open(stdout_file, 'w')
+        return original
+    return None
+
+
+def restore_stdout(original):
+    if original:
+        sys.stdout.close()
+        sys.stdout = original
+
+
+def redirect_stderr(stderr_file):
+    if stderr_file:
+        original = sys.stderr
+        sys.stderr = open(stderr_file, 'w')
+        return original
+    return None
+
+
+def restore_stderr(original):
+    if original:
+        sys.stderr.close()
+        sys.stderr = original
+
+
 def main():
     while True:
         sys.stdout.write("$ ")
@@ -51,13 +79,15 @@ def main():
         if not parts:
             continue
 
-        parts, output_file = parse_redirection(parts)
+        parts, stdout_file, stderr_file = parse_redirection(parts)
         cmd = parts[0] if parts else None
         args = parts[1:] if len(parts) > 1 else []
 
-        if output_file and cmd in [Command.ECHO, Command.PWD, Command.TYPE]:
-            original_stdout = sys.stdout
-            sys.stdout = open(output_file, 'w')
+        original_stdout = None
+        original_stderr = None
+        if cmd in [Command.ECHO, Command.PWD, Command.TYPE]:
+            original_stdout = redirect_stdout(stdout_file)
+            original_stderr = redirect_stderr(stderr_file)
 
         if command == Command.EXIT:
             break
@@ -74,21 +104,33 @@ def main():
                 continue
             handle_cd_command(args[0])
         else:
-            handle_external_command(cmd, args, output_file)
+            handle_external_command(cmd, args, stdout_file, stderr_file)
 
-        if output_file and cmd in [Command.ECHO, Command.PWD, Command.TYPE]:
-            sys.stdout.close()
-            sys.stdout = original_stdout
+        # Restore output for built-in commands
+        restore_stdout(original_stdout)
+        restore_stderr(original_stderr)
 
 
 def parse_redirection(parts):
     # Normalize 1> to >
     parts = ['>' if p == '1>' else p for p in parts]
 
+    stdout_file = None
+    stderr_file = None
+
+    # Check for stdout redirection
     if '>' in parts:
         idx = parts.index('>')
-        return parts[:idx], parts[idx + 1] if idx + 1 < len(parts) else None
-    return parts, None
+        stdout_file = parts[idx + 1] if idx + 1 < len(parts) else None
+        parts = parts[:idx] + parts[idx + 2:]  # Remove > and filename
+
+    # Check for stderr redirection
+    if '2>' in parts:
+        idx = parts.index('2>')
+        stderr_file = parts[idx + 1] if idx + 1 < len(parts) else None
+        parts = parts[:idx] + parts[idx + 2:]  # Remove 2> and filename
+
+    return parts, stdout_file, stderr_file
 
 
 def handle_echo_command(args):
@@ -125,17 +167,21 @@ def handle_cd_command(arg):
     os.chdir(arg)
 
 
-def handle_external_command(cmd, args, output_file=None):
+def handle_external_command(cmd, args, stdout_file=None, stderr_file=None):
     file_exists, _ = file_exists_in_path(cmd)
     if not file_exists:
         print(f"{cmd}: command not found")
         return
 
-    if output_file:
-        with open(output_file, 'w') as f:
-            subprocess.run([cmd, *args], stdout=f)
-    else:
-        subprocess.run([cmd, *args])
+    stdout_arg = open(stdout_file, 'w') if stdout_file else None
+    stderr_arg = open(stderr_file, 'w') if stderr_file else None
+
+    subprocess.run([cmd, *args], stdout=stdout_arg, stderr=stderr_arg)
+
+    if stdout_arg:
+        stdout_arg.close()
+    if stderr_arg:
+        stderr_arg.close()
 
 
 def command_exists(command):
