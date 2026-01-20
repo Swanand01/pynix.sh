@@ -14,11 +14,14 @@ from .commands import (
     command_exists,
     handle_builtin_command,
     handle_external_command,
+    setup_completion
 )
 
 
 def main():
     """Main REPL loop for the shell."""
+    setup_completion(list(Command))
+
     while True:
         sys.stdout.write("$ ")
         command = input().strip()
