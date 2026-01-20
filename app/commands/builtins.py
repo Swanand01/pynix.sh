@@ -2,7 +2,7 @@ import os
 import sys
 from enum import Enum
 from pathlib import Path
-from ..utils import file_exists_in_path
+from ..utils import executable_exists_in_path
 
 
 class Command(str, Enum):
@@ -53,12 +53,12 @@ def handle_type_command(arg):
         print(f"{arg} is a shell builtin")
         return
 
-    file_exists, file_path = file_exists_in_path(arg)
-    if not file_exists:
+    executable_exists, executable_path = executable_exists_in_path(arg)
+    if not executable_exists:
         print(f"{arg}: not found")
         return
 
-    print(f"{arg} is {file_path}")
+    print(f"{arg} is {executable_path}")
 
 
 def handle_pwd_command():

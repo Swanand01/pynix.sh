@@ -1,5 +1,5 @@
 import subprocess
-from ..utils import file_exists_in_path
+from ..utils import executable_exists_in_path
 
 
 def handle_external_command(cmd, args, stdout_spec=None, stderr_spec=None):
@@ -12,8 +12,8 @@ def handle_external_command(cmd, args, stdout_spec=None, stderr_spec=None):
         stdout_spec: None or tuple(path, mode) for stdout redirection
         stderr_spec: None or tuple(path, mode) for stderr redirection
     """
-    file_exists, _ = file_exists_in_path(cmd)
-    if not file_exists:
+    executable_exists, _ = executable_exists_in_path(cmd)
+    if not executable_exists:
         print(f"{cmd}: command not found")
         return
 

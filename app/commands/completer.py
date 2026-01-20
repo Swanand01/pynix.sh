@@ -1,21 +1,31 @@
 import readline
 import platform
+from ..utils import get_executable_completions
 
 
-def create_completer(options):
-    sorted_options = sorted(options)
+def create_completer(builtins):
+    """Create a completer that completes both builtins and PATH executables."""
 
     def completer(text, state):
-        # Build list of all matches for the current text
-        if text:
-            matches = [
-                opt + " " for opt in sorted_options if opt.startswith(text)]
-        else:
-            matches = sorted_options
+        # On first call (state=0), build the match list
+        if state == 0:
+            # Start with builtin matches
+            matches = [cmd for cmd in builtins if cmd.startswith(text)]
+
+            # Add PATH executable matches
+            path_matches = get_executable_completions(text)
+            matches.extend(path_matches)
+
+            # Remove duplicates and sort once
+            matches = sorted(set(matches))
+
+            # Add space after each match for convenience
+            completer.matches = [m + " " for m in matches]
 
         # Return the match at index 'state', or None if no more
-        return matches[state] if state < len(matches) else None
+        return completer.matches[state] if state < len(completer.matches) else None
 
+    completer.matches = []
     return completer
 
 
