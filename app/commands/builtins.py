@@ -12,6 +12,7 @@ class Command(str, Enum):
     TYPE = 'type'
     PWD = 'pwd'
     CD = 'cd'
+    HISTORY = 'history'
 
 
 command_docs = {
@@ -34,6 +35,10 @@ command_docs = {
     Command.CD: {
         "description": "Changes the current directory",
         "usage": "cd [directory]"
+    },
+    Command.HISTORY: {
+        "description": "Displays the command history",
+        "usage": "history"
     },
 }
 
@@ -81,6 +86,10 @@ def handle_cd(arg):
     os.chdir(arg)
 
 
+def handle_history():
+    pass
+
+
 def run_builtin(cmd, args):
     """
     Execute a builtin command.
@@ -100,6 +109,8 @@ def run_builtin(cmd, args):
     elif cmd == Command.CD:
         if args:
             handle_cd(args[0])
+    elif cmd == Command.HISTORY:
+        handle_history()
 
     return False
 
