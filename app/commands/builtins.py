@@ -2,8 +2,12 @@ import os
 import sys
 from enum import Enum
 from pathlib import Path
+from collections import deque
 from ..utils import executable_exists_in_path
 from ..redirection import redirect_stdout, restore_stdout, redirect_stderr, restore_stderr, parse_segment
+
+# Command history storage
+command_history = deque(maxlen=1000)
 
 
 class Command(str, Enum):
@@ -87,7 +91,9 @@ def handle_cd(arg):
 
 
 def handle_history():
-    pass
+    """Handle the history builtin command."""
+    for i, cmd in enumerate(command_history, start=1):
+        print(f"{i:5d}  {cmd}")
 
 
 def run_builtin(cmd, args):
@@ -113,6 +119,11 @@ def run_builtin(cmd, args):
         handle_history()
 
     return False
+
+
+def add_to_history(command):
+    """Add a command to the history."""
+    command_history.append(command)
 
 
 def execute_builtin(segment):

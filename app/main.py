@@ -3,7 +3,8 @@ from .commands import (
     is_builtin,
     execute_builtin,
     execute_external,
-    setup_completion
+    setup_completion,
+    add_to_history
 )
 from .pipeline import execute_pipeline
 
@@ -17,6 +18,9 @@ def main():
 
         if not command:
             continue
+
+        # Add to history
+        add_to_history(command)
 
         # Parse command into pipeline segments
         pipeline = parse_pipeline(command)
