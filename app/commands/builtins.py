@@ -90,9 +90,19 @@ def handle_cd(arg):
     os.chdir(arg)
 
 
-def handle_history():
+def handle_history(args=None):
     """Handle the history builtin command."""
-    for i, cmd in enumerate(command_history, start=1):
+    limit = None
+    if args:
+        try:
+            limit = int(args[0])
+        except ValueError:
+            pass
+
+    cmds = list(command_history)[-limit:] if limit else list(command_history)
+    start = len(command_history) - len(cmds) + 1
+
+    for i, cmd in enumerate(cmds, start=start):
         print(f"{i:5d}  {cmd}")
 
 
@@ -116,7 +126,7 @@ def run_builtin(cmd, args):
         if args:
             handle_cd(args[0])
     elif cmd == Command.HISTORY:
-        handle_history()
+        handle_history(args)
 
     return False
 
