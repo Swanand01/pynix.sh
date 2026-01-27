@@ -1,7 +1,7 @@
 import sys
 import os
 from .redirection import prepare_redirects
-from .commands import run_builtin, Command
+from .commands import run_builtin, Command, is_builtin
 
 
 def redirect_io_for_pipeline(i, n, pipes, stdout_spec, stderr_spec):
@@ -96,7 +96,6 @@ def execute_pipeline(pipeline):
 
         cmd = cmd_parts[0]
         args = cmd_parts[1:]
-        is_builtin = is_builtin(cmd)
 
         # Get file redirects (>, >>, 2>, 2>>)
         stdout_spec, stderr_spec = prepare_redirects(
@@ -118,7 +117,7 @@ def execute_pipeline(pipeline):
                 os.close(write_fd)
 
             # 3. Run the command
-            if is_builtin:
+            if is_builtin(cmd):
                 # Builtin: run our Python function
                 run_builtin(cmd, args)
                 sys.exit(0)  # Must exit child process
