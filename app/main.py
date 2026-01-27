@@ -1,69 +1,45 @@
 import sys
-import shlex
 
-from .command_parser import parse_redirection
-from .redirection import (
-    redirect_stdout,
-    restore_stdout,
-    redirect_stderr,
-    restore_stderr,
-    prime_redirect_files,
-)
+from .command_parser import parse_pipeline
 from .commands import (
-    Command,
-    command_exists,
-    handle_builtin_command,
-    handle_external_command,
+    is_builtin,
+    execute_builtin,
+    execute_external,
     setup_completion
 )
+from .pipeline import execute_pipeline
 
 
 def main():
     """Main REPL loop for the shell."""
-    setup_completion(list(Command))
+    setup_completion()
 
     while True:
         command = input("$ ").strip()
 
-        try:
-            parts = shlex.split(command)
-        except ValueError:
-            parts = command.split()
-
-        if not parts:
+        if not command:
             continue
 
-        parts, stdout_redirs, stderr_redirs = parse_redirection(parts)
-        cmd = parts[0] if parts else None
-        args = parts[1:] if len(parts) > 1 else []
+        # Parse command into pipeline segments
+        pipeline = parse_pipeline(command)
 
-        original_stdout = None
-        original_stderr = None
+        # Handle pipelines
+        if len(pipeline) > 1:
+            execute_pipeline(pipeline)
+            continue
 
-        # Prime earlier redirect files (create/truncate them)
-        prime_redirect_files(stdout_redirs)
-        prime_redirect_files(stderr_redirs)
+        # Single command
+        segment = pipeline[0]
+        cmd = segment['parts'][0] if segment['parts'] else None
 
-        # Get the last redirect for each stream (the active one)
-        stdout_spec = stdout_redirs[-1] if stdout_redirs else None
-        stderr_spec = stderr_redirs[-1] if stderr_redirs else None
+        # Handle builtin
+        if is_builtin(cmd):
+            if execute_builtin(segment):
+                break  # Exit if builtin returned True
+            continue
 
-        # Redirect for builtin commands
-        if cmd in [Command.ECHO, Command.PWD, Command.TYPE, Command.CD]:
-            original_stdout = redirect_stdout(stdout_spec)
-            original_stderr = redirect_stderr(stderr_spec)
-
-        # Execute command
-        if command_exists(cmd):
-            should_exit = handle_builtin_command(cmd, args)
-            if should_exit:
-                break
-        else:
-            handle_external_command(cmd, args, stdout_spec, stderr_spec)
-
-        # Restore original stdout/stderr
-        restore_stdout(original_stdout)
-        restore_stderr(original_stderr)
+        # Handle external
+        execute_external(segment)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,12 @@
-from .builtins import Command, command_exists, handle_builtin_command
-from .external import handle_external_command
+from .builtins import Command, is_builtin, run_builtin, execute_builtin
+from .external import execute_external
 from .completer import setup_completion
 
 __all__ = [
     'Command',
-    'command_exists',
-    'handle_builtin_command',
-    'handle_external_command',
+    'is_builtin',
+    'run_builtin',
+    'execute_builtin',
+    'execute_external',
     'setup_completion',
 ]

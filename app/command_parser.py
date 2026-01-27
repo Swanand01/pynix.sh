@@ -1,12 +1,58 @@
+import shlex
+
+
+def has_pipe(command):
+    """Check if command string contains pipe operator."""
+    return '|' in command
+
+
+def parse_pipeline(command):
+    """
+    Parse a pipeline command into segments.
+
+    Args:
+        command: Raw command string (e.g., "ls -l | grep py > out.txt")
+
+    Returns:
+        List of dicts with structure:
+        [
+            {'parts': ['ls', '-l'], 'stdout_redirs': [], 'stderr_redirs': []},
+            {'parts': ['grep', 'py'], 'stdout_redirs': [('out.txt', 'w')], 'stderr_redirs': []}
+        ]
+    """
+    segments = command.split('|')
+    pipeline = []
+
+    for segment in segments:
+        segment = segment.strip()
+
+        # Tokenize the segment
+        try:
+            parts = shlex.split(segment)
+        except ValueError:
+            parts = segment.split()
+
+        # Parse redirections for this segment
+        parts, stdout_redirs, stderr_redirs = parse_redirection(parts)
+
+        pipeline.append({
+            'parts': parts,
+            'stdout_redirs': stdout_redirs,
+            'stderr_redirs': stderr_redirs
+        })
+
+    return pipeline
+
+
 def parse_redirection(parts):
     """
     Parse redirection operators from command parts.
-    
+
     Returns:
         cleaned_parts: Command and args without redirection operators
         stdout_redirs: list[(path, mode)] in appearance order
         stderr_redirs: list[(path, mode)] in appearance order
-    
+
     The last redirect in each list is the active target; earlier ones
     should still be created/truncated/appended to match bash behavior.
     """

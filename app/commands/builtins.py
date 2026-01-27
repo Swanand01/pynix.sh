@@ -3,6 +3,7 @@ import sys
 from enum import Enum
 from pathlib import Path
 from ..utils import executable_exists_in_path
+from ..redirection import redirect_stdout, restore_stdout, redirect_stderr, restore_stderr, parse_segment
 
 
 class Command(str, Enum):
@@ -37,19 +38,19 @@ command_docs = {
 }
 
 
-def command_exists(command):
+def is_builtin(command):
     """Check if a command is a shell builtin."""
     return command in list(Command)
 
 
-def handle_echo_command(args):
+def handle_echo(args):
     """Handle the echo builtin command."""
     print(' '.join(args))
 
 
-def handle_type_command(arg):
+def handle_type(arg):
     """Handle the type builtin command."""
-    if command_exists(arg):
+    if is_builtin(arg):
         print(f"{arg} is a shell builtin")
         return
 
@@ -61,12 +62,12 @@ def handle_type_command(arg):
     print(f"{arg} is {executable_path}")
 
 
-def handle_pwd_command():
+def handle_pwd():
     """Handle the pwd builtin command."""
     print(os.getcwd())
 
 
-def handle_cd_command(arg):
+def handle_cd(arg):
     """Handle the cd builtin command."""
     if arg == "~":
         arg = str(Path.home())
@@ -80,7 +81,7 @@ def handle_cd_command(arg):
     os.chdir(arg)
 
 
-def handle_builtin_command(cmd, args):
+def run_builtin(cmd, args):
     """
     Execute a builtin command.
 
@@ -90,14 +91,42 @@ def handle_builtin_command(cmd, args):
     if cmd == Command.EXIT:
         return True
     elif cmd == Command.ECHO:
-        handle_echo_command(args)
+        handle_echo(args)
     elif cmd == Command.TYPE:
         if args:
-            handle_type_command(args[0])
+            handle_type(args[0])
     elif cmd == Command.PWD:
-        handle_pwd_command()
+        handle_pwd()
     elif cmd == Command.CD:
         if args:
-            handle_cd_command(args[0])
+            handle_cd(args[0])
 
     return False
+
+
+def execute_builtin(segment):
+    """
+    Execute a single builtin command with redirects (runs in parent process).
+
+    Args:
+        segment: Pipeline segment with 'parts', 'stdout_redirs', 'stderr_redirs'
+
+    Returns:
+        True if should exit shell, False otherwise
+    """
+
+    # Parse segment and prepare redirects
+    cmd, args, stdout_spec, stderr_spec = parse_segment(segment)
+
+    # Redirect stdout/stderr
+    original_stdout = redirect_stdout(stdout_spec)
+    original_stderr = redirect_stderr(stderr_spec)
+
+    # Run the builtin
+    should_exit = run_builtin(cmd, args)
+
+    # Restore stdout/stderr
+    restore_stdout(original_stdout)
+    restore_stderr(original_stderr)
+
+    return should_exit

@@ -1,6 +1,7 @@
 import readline
 import platform
 from ..utils import get_executable_completions
+from .builtins import Command
 
 
 def create_completer(builtins):
@@ -32,7 +33,11 @@ def create_completer(builtins):
     return completer
 
 
-def setup_completion(builtin_commands=[]):
+def setup_completion(builtin_commands=None):
+    """Setup tab completion for shell commands."""
+    if builtin_commands is None:
+        builtin_commands = list(Command)
+
     completer = create_completer(builtin_commands)
     readline.set_completer(completer)
 

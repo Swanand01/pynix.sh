@@ -64,3 +64,58 @@ def prime_redirect_files(redirs):
         # Open and close to apply side-effect (create/truncate or create for append)
         with open(path, mode):
             pass
+
+
+def get_redirect_spec(redirs):
+    """
+    Get the active redirect specification (last one).
+
+    Args:
+        redirs: List of (path, mode) tuples
+
+    Returns:
+        Last redirect tuple or None
+    """
+    return redirs[-1] if redirs else None
+
+
+def prepare_redirects(stdout_redirs, stderr_redirs):
+    """
+    Prime redirect files and get active specs.
+
+    Args:
+        stdout_redirs: List of stdout redirect tuples
+        stderr_redirs: List of stderr redirect tuples
+
+    Returns:
+        (stdout_spec, stderr_spec) - Active redirect specs or None
+    """
+    prime_redirect_files(stdout_redirs)
+    prime_redirect_files(stderr_redirs)
+
+    stdout_spec = get_redirect_spec(stdout_redirs)
+    stderr_spec = get_redirect_spec(stderr_redirs)
+
+    return stdout_spec, stderr_spec
+
+
+def parse_segment(segment):
+    """
+    Extract command info and prepare redirects from a pipeline segment.
+
+    Args:
+        segment: Dict with 'parts', 'stdout_redirs', 'stderr_redirs'
+
+    Returns:
+        (cmd, args, stdout_spec, stderr_spec)
+    """
+    parts = segment['parts']
+    cmd = parts[0] if parts else None
+    args = parts[1:] if len(parts) > 1 else []
+
+    stdout_spec, stderr_spec = prepare_redirects(
+        segment['stdout_redirs'],
+        segment['stderr_redirs']
+    )
+
+    return cmd, args, stdout_spec, stderr_spec
