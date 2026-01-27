@@ -1,7 +1,7 @@
 import sys
 import os
 from .redirection import prepare_redirects
-from .commands import is_builtin, run_builtin, Command
+from .commands import run_builtin, Command
 
 
 def redirect_io_for_pipeline(i, n, pipes, stdout_spec, stderr_spec):

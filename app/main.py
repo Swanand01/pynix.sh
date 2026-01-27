@@ -1,5 +1,3 @@
-import sys
-
 from .command_parser import parse_pipeline
 from .commands import (
     is_builtin,
