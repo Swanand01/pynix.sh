@@ -1,4 +1,4 @@
-from .builtins import Command, is_builtin, run_builtin, execute_builtin, add_to_history
+from .builtins import Command, is_builtin, run_builtin, execute_builtin, add_to_history, load_history_from_file
 from .external import execute_external
 from .completer import setup_completion
 
@@ -10,4 +10,5 @@ __all__ = [
     'execute_external',
     'setup_completion',
     'add_to_history',
+    'load_history_from_file',
 ]

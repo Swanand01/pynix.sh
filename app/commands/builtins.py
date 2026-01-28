@@ -94,27 +94,14 @@ def handle_cd(arg):
 def handle_history(args=None):
     """Handle the history builtin command."""
     if not args:
-        # Show all history
         cmds = list(command_history)
         start = 1
     elif args[0] == '-r':
-        # Read from file
         if len(args) < 2:
             print("history: -r: filename argument required", file=sys.stderr)
             return
 
-        filepath = args[1]
-        try:
-            with open(filepath, 'r') as f:
-                for line in f:
-                    line = line.rstrip('\n')
-                    if line:
-                        command_history.append(line)
-        except FileNotFoundError:
-            print(
-                f"history: {filepath}: No such file or directory", file=sys.stderr)
-        except Exception as e:
-            print(f"history: {filepath}: {e}", file=sys.stderr)
+        load_history_from_file(args[1])
         return
     elif args[0] == '-a':
         global last_appended_index
@@ -136,7 +123,6 @@ def handle_history(args=None):
             print(f"history: {filepath}: {e}", file=sys.stderr)
         return
     elif args[0] == '-w':
-        # Write to file
         if len(args) < 2:
             print("history: -w: filename argument required", file=sys.stderr)
             return
@@ -150,13 +136,11 @@ def handle_history(args=None):
             print(f"history: {filepath}: {e}", file=sys.stderr)
         return
     else:
-        # Try to parse as limit
         try:
             limit = int(args[0])
             cmds = list(command_history)[-limit:]
             start = len(command_history) - len(cmds) + 1
         except ValueError:
-            # Invalid argument, show all
             cmds = list(command_history)
             start = 1
 
@@ -192,6 +176,20 @@ def run_builtin(cmd, args):
 def add_to_history(command):
     """Add a command to the history."""
     command_history.append(command)
+
+
+def load_history_from_file(filepath):
+    """Load history from a file into memory."""
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.rstrip('\n')
+                if line:
+                    command_history.append(line)
+    except FileNotFoundError:
+        print(f"History file {filepath} not found.", file=sys.stderr)
+    except Exception as e:
+        print(f"Error loading history from {filepath}: {e}", file=sys.stderr)
 
 
 def execute_builtin(segment):

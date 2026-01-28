@@ -6,7 +6,8 @@ from .commands import (
     execute_builtin,
     execute_external,
     setup_completion,
-    add_to_history
+    add_to_history,
+    load_history_from_file
 )
 from .pipeline import execute_pipeline
 
@@ -14,6 +15,11 @@ from .pipeline import execute_pipeline
 def main():
     """Main REPL loop for the shell."""
     setup_completion()
+
+    histfile = os.environ.get('HISTFILE')
+    if histfile:
+        load_history_from_file(histfile)
+
     home = str(Path.home())
 
     while True:
