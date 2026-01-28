@@ -7,7 +7,8 @@ from .commands import (
     execute_external,
     setup_completion,
     add_to_history,
-    load_history_from_file
+    load_history_from_file,
+    write_history_to_file
 )
 from .pipeline import execute_pipeline
 
@@ -45,14 +46,17 @@ def main():
         segment = pipeline[0]
         cmd = segment['parts'][0] if segment['parts'] else None
 
-        # Handle builtin
-        if is_builtin(cmd):
-            if execute_builtin(segment):
-                break  # Exit if builtin returned True
+        # Handle external
+        if not is_builtin(cmd):
+            execute_external(segment)
             continue
 
-        # Handle external
-        execute_external(segment)
+        # Handle builtin
+        should_exit = execute_builtin(segment)
+        if should_exit:
+            if histfile:
+                write_history_to_file(histfile)
+            break
 
 
 if __name__ == "__main__":

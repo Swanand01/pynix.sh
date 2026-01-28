@@ -2,13 +2,9 @@ import os
 import sys
 from enum import Enum
 from pathlib import Path
-from collections import deque
 from ..utils import executable_exists_in_path
 from ..redirection import redirect_stdout, restore_stdout, redirect_stderr, restore_stderr, parse_segment
-
-# Command history storage
-command_history = deque(maxlen=1000)
-last_appended_index = 0
+from .history import command_history, load_history_from_file, append_history_to_file, write_history_to_file
 
 
 class Command(str, Enum):
@@ -104,36 +100,18 @@ def handle_history(args=None):
         load_history_from_file(args[1])
         return
     elif args[0] == '-a':
-        global last_appended_index
         if len(args) < 2:
             print("history: -a: filename argument required", file=sys.stderr)
             return
 
-        filepath = args[1]
-        try:
-            cmds = list(command_history)
-            new_cmds = cmds[last_appended_index:]
-
-            if new_cmds:
-                with open(filepath, 'a') as f:
-                    for cmd in new_cmds:
-                        f.write(cmd + '\n')
-                last_appended_index = len(cmds)
-        except Exception as e:
-            print(f"history: {filepath}: {e}", file=sys.stderr)
+        append_history_to_file(args[1])
         return
     elif args[0] == '-w':
         if len(args) < 2:
             print("history: -w: filename argument required", file=sys.stderr)
             return
 
-        filepath = args[1]
-        try:
-            with open(filepath, 'w') as f:
-                for cmd in command_history:
-                    f.write(cmd + '\n')
-        except Exception as e:
-            print(f"history: {filepath}: {e}", file=sys.stderr)
+        write_history_to_file(args[1])
         return
     else:
         try:
@@ -171,25 +149,6 @@ def run_builtin(cmd, args):
         handle_history(args)
 
     return False
-
-
-def add_to_history(command):
-    """Add a command to the history."""
-    command_history.append(command)
-
-
-def load_history_from_file(filepath):
-    """Load history from a file into memory."""
-    try:
-        with open(filepath, 'r') as f:
-            for line in f:
-                line = line.rstrip('\n')
-                if line:
-                    command_history.append(line)
-    except FileNotFoundError:
-        print(f"History file {filepath} not found.", file=sys.stderr)
-    except Exception as e:
-        print(f"Error loading history from {filepath}: {e}", file=sys.stderr)
 
 
 def execute_builtin(segment):
