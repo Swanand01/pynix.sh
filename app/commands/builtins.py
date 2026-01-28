@@ -8,6 +8,7 @@ from ..redirection import redirect_stdout, restore_stdout, redirect_stderr, rest
 
 # Command history storage
 command_history = deque(maxlen=1000)
+last_appended_index = 0
 
 
 class Command(str, Enum):
@@ -112,6 +113,25 @@ def handle_history(args=None):
         except FileNotFoundError:
             print(
                 f"history: {filepath}: No such file or directory", file=sys.stderr)
+        except Exception as e:
+            print(f"history: {filepath}: {e}", file=sys.stderr)
+        return
+    elif args[0] == '-a':
+        global last_appended_index
+        if len(args) < 2:
+            print("history: -a: filename argument required", file=sys.stderr)
+            return
+
+        filepath = args[1]
+        try:
+            cmds = list(command_history)
+            new_cmds = cmds[last_appended_index:]
+
+            if new_cmds:
+                with open(filepath, 'a') as f:
+                    for cmd in new_cmds:
+                        f.write(cmd + '\n')
+                last_appended_index = len(cmds)
         except Exception as e:
             print(f"history: {filepath}: {e}", file=sys.stderr)
         return
