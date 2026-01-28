@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from .command_parser import parse_pipeline
 from .commands import (
     is_builtin,
@@ -12,9 +14,12 @@ from .pipeline import execute_pipeline
 def main():
     """Main REPL loop for the shell."""
     setup_completion()
+    home = str(Path.home())
 
     while True:
-        command = input("$ ").strip()
+        cwd = os.getcwd()
+        prompt_dir = cwd.replace(home, "~") if cwd.startswith(home) else cwd
+        command = input(f"$ ").strip()
 
         if not command:
             continue
