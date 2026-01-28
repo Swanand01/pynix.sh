@@ -115,6 +115,20 @@ def handle_history(args=None):
         except Exception as e:
             print(f"history: {filepath}: {e}", file=sys.stderr)
         return
+    elif args[0] == '-w':
+        # Write to file
+        if len(args) < 2:
+            print("history: -w: filename argument required", file=sys.stderr)
+            return
+
+        filepath = args[1]
+        try:
+            with open(filepath, 'w') as f:
+                for cmd in command_history:
+                    f.write(cmd + '\n')
+        except Exception as e:
+            print(f"history: {filepath}: {e}", file=sys.stderr)
+        return
     else:
         # Try to parse as limit
         try:
