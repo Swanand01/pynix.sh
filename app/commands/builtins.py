@@ -3,8 +3,8 @@ import sys
 from enum import Enum
 from pathlib import Path
 from ..utils import executable_exists_in_path
-from ..redirection import redirect_stdout, restore_stdout, redirect_stderr, restore_stderr, parse_segment
-from .history import command_history, load_history_from_file, append_history_to_file, write_history_to_file
+from ..parsing.redirection import redirect_stdout, restore_stdout, redirect_stderr, restore_stderr, parse_segment
+from ..ui.history import command_history, load_history_from_file, append_history_to_file, write_history_to_file
 
 
 class Command(str, Enum):
