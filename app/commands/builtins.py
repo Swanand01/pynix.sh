@@ -4,8 +4,8 @@ from pathlib import Path
 from ..types import Command, is_builtin
 from ..utils import executable_exists_in_path
 from ..parsing.redirection import parse_segment, expand_path
-from ..history import command_history, load_history_from_file, append_history_to_file, write_history_to_file
 
+HISTFILE = os.path.expanduser('~/.pynix_history')
 
 command_docs = {
     Command.EXIT: {
@@ -73,46 +73,42 @@ def handle_cd(arg):
     os.chdir(arg)
 
 
-def handle_history(args=None, stdout=None, stderr=None):
+def handle_history(args=None, stdout=None, histfile=None):
     """Handle the history builtin command."""
     stdout = stdout or sys.stdout
-    stderr = stderr or sys.stderr
+    histfile = histfile or HISTFILE
 
-    if not args:
-        cmds = list(command_history)
-        start = 1
-    elif args[0] == '-r':
-        if len(args) < 2:
-            print("history: -r: filename argument required", file=stderr)
-            return
+    try:
+        with open(histfile, 'r') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        lines = []
 
-        load_history_from_file(expand_path(args[1]))
-        return
-    elif args[0] == '-a':
-        if len(args) < 2:
-            print("history: -a: filename argument required", file=stderr)
-            return
+    cmds = []
+    current_cmd = []
+    for line in lines:
+        line = line.rstrip('\n')
+        if line.startswith('#'):
+            if current_cmd:
+                cmds.append('\n'.join(current_cmd))
+                current_cmd = []
+        elif line.startswith('+'):
+            current_cmd.append(line[1:])
 
-        append_history_to_file(expand_path(args[1]))
-        return
-    elif args[0] == '-w':
-        if len(args) < 2:
-            print("history: -w: filename argument required", file=stderr)
-            return
+    if current_cmd:
+        cmds.append('\n'.join(current_cmd))
 
-        write_history_to_file(expand_path(args[1]))
-        return
-    else:
+    if args:
         try:
             limit = int(args[0])
-            cmds = list(command_history)[-limit:]
-            start = len(command_history) - len(cmds) + 1
+            cmds = cmds[-limit:]
         except ValueError:
-            cmds = list(command_history)
-            start = 1
+            pass
 
+    start = 1
     for i, cmd in enumerate(cmds, start=start):
-        print(f"{i:5d}  {cmd}", file=stdout)
+        display = cmd.split('\n')[0] if '\n' in cmd else cmd
+        print(f"{i:5d}  {display}", file=stdout)
 
 
 def run_builtin(cmd, args, stdout=None, stderr=None):
@@ -141,7 +137,7 @@ def run_builtin(cmd, args, stdout=None, stderr=None):
         if args:
             handle_cd(args[0])
     elif cmd == Command.HISTORY:
-        handle_history(args, stdout=stdout, stderr=stderr)
+        handle_history(args, stdout=stdout)
 
     return False
 

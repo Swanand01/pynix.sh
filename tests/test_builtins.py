@@ -1,5 +1,5 @@
 from app.commands.builtins import (
-    handle_echo, handle_pwd, handle_type, handle_cd,
+    handle_echo, handle_pwd, handle_type, handle_cd, handle_history,
     is_builtin
 )
 import unittest
@@ -83,6 +83,70 @@ class TestBuiltinCommands(unittest.TestCase):
         self.assertTrue(is_builtin('exit'))
         self.assertFalse(is_builtin('ls'))
         self.assertFalse(is_builtin('grep'))
+
+    def test_history_shows_commands(self):
+        """Test history displays commands without metadata."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.history') as f:
+            # FileHistory format: # timestamp, +command
+            f.write("# 2026-01-31 12:50:25.322892\n")
+            f.write("+ls\n")
+            f.write("# 2026-01-31 12:50:30.123456\n")
+            f.write("+echo hello\n")
+            f.write("# 2026-01-31 12:50:35.654321\n")
+            f.write("+cd ~/Downloads\n")
+            histfile = f.name
+
+        try:
+            out = StringIO()
+            handle_history(stdout=out, histfile=histfile)
+            output = out.getvalue()
+            self.assertIn('ls', output)
+            self.assertIn('echo hello', output)
+            self.assertIn('cd ~/Downloads', output)
+            self.assertNotIn('# 2026', output)
+            self.assertNotIn('+ls', output)
+        finally:
+            os.unlink(histfile)
+
+    def test_history_with_limit(self):
+        """Test history n shows last n commands."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.history') as f:
+            f.write("# ts\n+ls\n# ts\n+echo hello\n# ts\n+cd ~/Downloads\n")
+            histfile = f.name
+
+        try:
+            out = StringIO()
+            handle_history(['2'], stdout=out, histfile=histfile)
+            output = out.getvalue()
+            lines = [l for l in output.strip().split('\n') if l]
+            self.assertEqual(len(lines), 2)
+            self.assertIn('echo hello', output)
+            self.assertIn('cd ~/Downloads', output)
+            self.assertNotIn('ls', output)
+        finally:
+            os.unlink(histfile)
+
+    def test_history_numbering(self):
+        """Test history shows proper line numbers."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.history') as f:
+            f.write("# ts\n+ls\n# ts\n+echo hello\n# ts\n+cd ~/Downloads\n")
+            histfile = f.name
+
+        try:
+            out = StringIO()
+            handle_history(stdout=out, histfile=histfile)
+            output = out.getvalue()
+            self.assertIn('    1  ls', output)
+            self.assertIn('    2  echo hello', output)
+            self.assertIn('    3  cd ~/Downloads', output)
+        finally:
+            os.unlink(histfile)
+
+    def test_history_file_not_found(self):
+        """Test history handles missing file gracefully."""
+        out = StringIO()
+        handle_history(stdout=out, histfile='/nonexistent/history/file')
+        self.assertEqual(out.getvalue(), '')
 
 
 if __name__ == '__main__':

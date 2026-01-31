@@ -9,23 +9,15 @@ from .parsing import parse_pipeline
 from .parsing.pipeline import execute_pipeline
 from .types import Command, is_builtin
 from .commands import execute_builtin
-from .ui import (
-    add_to_history,
-    load_history_from_file,
-    write_history_to_file,
-    create_prompt_session,
-)
+from .commands.builtins import HISTFILE
+from .ui import create_prompt_session
 
 
 def main():
     """Main REPL loop for the shell."""
-    histfile = os.environ.get('HISTFILE')
-    if histfile:
-        load_history_from_file(histfile)
-
     home = str(Path.home())
     builtin_commands = [c.value for c in Command]
-    session = create_prompt_session(builtin_commands)
+    session = create_prompt_session(builtin_commands, histfile=HISTFILE)
 
     user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
     host = socket.gethostname()
@@ -43,14 +35,13 @@ def main():
                 ('class:pygments.operator', ' > '),
             ])
             command = session.prompt(prompt_text).strip()
-        except (EOFError, KeyboardInterrupt):
+        except KeyboardInterrupt:
             continue
+        except EOFError:
+            break
 
         if not command:
             continue
-
-        # Add to history
-        add_to_history(command)
 
         # Handle $() and !() substitutions before pipeline parsing
         if has_substitution(command):
@@ -73,8 +64,6 @@ def main():
         if is_builtin(cmd):
             should_exit = execute_builtin(segment)
             if should_exit:
-                if histfile:
-                    write_history_to_file(histfile)
                 break
             continue
 

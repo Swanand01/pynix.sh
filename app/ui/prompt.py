@@ -1,9 +1,11 @@
 from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles.pygments import style_from_pygments_cls
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from pygments.styles import get_style_by_name
 from .shell_lexer import ShellLexer
 from .completer import ShellCompleter
@@ -41,10 +43,11 @@ def create_key_bindings():
     return bindings
 
 
-def create_prompt_session(builtin_commands=None):
+def create_prompt_session(builtin_commands=None, histfile=None):
     """Create and configure a PromptSession for the shell."""
     style = style_from_pygments_cls(get_style_by_name('dracula'))
     completer = ShellCompleter(builtin_commands)
+    history = FileHistory(histfile) if histfile else None
     return PromptSession(
         lexer=PygmentsLexer(ShellLexer),
         style=style,
@@ -54,4 +57,6 @@ def create_prompt_session(builtin_commands=None):
         complete_style=CompleteStyle.MULTI_COLUMN,
         complete_in_thread=True,
         enable_history_search=True,
+        auto_suggest=AutoSuggestFromHistory(),
+        history=history,
     )
