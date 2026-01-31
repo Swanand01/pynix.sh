@@ -1,4 +1,5 @@
 from prompt_toolkit import PromptSession
+from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
@@ -43,12 +44,14 @@ def create_key_bindings():
 def create_prompt_session(builtin_commands=None):
     """Create and configure a PromptSession for the shell."""
     style = style_from_pygments_cls(get_style_by_name('dracula'))
+    completer = ShellCompleter(builtin_commands)
     return PromptSession(
         lexer=PygmentsLexer(ShellLexer),
         style=style,
         multiline=True,
         key_bindings=create_key_bindings(),
-        completer=ShellCompleter(builtin_commands),
+        completer=completer,
+        complete_style=CompleteStyle.MULTI_COLUMN,
         complete_in_thread=True,
-        complete_while_typing=False,
+        enable_history_search=True,
     )

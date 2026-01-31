@@ -1,42 +1,50 @@
-from prompt_toolkit.completion import Completer, Completion
-from ..utils import get_executable_completions
+from prompt_toolkit.completion import Completer, Completion, PathCompleter, ExecutableCompleter
+from prompt_toolkit.document import Document
 
 
 class ShellCompleter(Completer):
     """
-    Simple xonsh-style completer.
+    Shell completer with command and path completion.
 
-    - At the first token it completes builtins and executables from $PATH.
-    - For later tokens it currently reuses executable completion as a
-      lightweight argument/path heuristic.
+    - First token: builtins and executables from $PATH
+    - Other tokens: file/folder paths via PathCompleter
     """
 
     def __init__(self, builtins=None):
-        # Builtin command names (exit, echo, pwd, cd, history, ...) if provided
         self.builtins = builtins or []
+        self.path_completer = PathCompleter(expanduser=True)
+        self.executable_completer = ExecutableCompleter()
 
     def get_completions(self, document, complete_event):
-        text_before = document.text_before_cursor
-        word = document.get_word_before_cursor(WORD=True)
+        text = document.text_before_cursor
 
-        if not word:
-            return
-
-        # Are we completing the first token on the line?
-        stripped = text_before.lstrip()
-        is_first_token = stripped.startswith(
-            word) and " " not in stripped.split(word, 1)[0]
-
-        matches = set()
-
-        if is_first_token:
-            # First token → shell command position
-            matches.update(
-                cmd for cmd in self.builtins if cmd.startswith(word))
-            matches.update(get_executable_completions(word))
+        # Extract the current word (after last space, or whole text)
+        if ' ' in text:
+            word_start = text.rfind(' ') + 1
+            is_first_token = False
         else:
-            # Later tokens → lightweight argument/path completion
-            matches.update(get_executable_completions(word))
+            word_start = 0
+            is_first_token = True
 
-        for m in sorted(matches):
-            yield Completion(m, start_position=-len(word))
+        word = text[word_start:]
+        sub_doc = Document(word)
+
+        # Path completions (always available)
+        for completion in self.path_completer.get_completions(sub_doc, complete_event):
+            yield Completion(
+                completion.text,
+                start_position=completion.start_position,
+                display=completion.display,
+            )
+
+        # Command completions (first token only)
+        if is_first_token and word:
+            for cmd in self.builtins:
+                if cmd.startswith(word):
+                    yield Completion(cmd, start_position=-len(word))
+            for completion in self.executable_completer.get_completions(sub_doc, complete_event):
+                yield Completion(
+                    completion.text,
+                    start_position=completion.start_position,
+                    display=completion.display,
+                )

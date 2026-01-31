@@ -1,54 +1,9 @@
-import sys
+import os
 
 
-def redirect_stdout(stdout_spec):
-    """
-    Redirect stdout to a file.
-
-    Args:
-        stdout_spec: None or tuple(path, mode) where mode is 'w' or 'a'
-
-    Returns:
-        Original stdout or None
-    """
-    if stdout_spec:
-        stdout_file, mode = stdout_spec
-        original = sys.stdout
-        sys.stdout = open(stdout_file, mode)
-        return original
-    return None
-
-
-def restore_stdout(original):
-    """Restore original stdout."""
-    if original:
-        sys.stdout.close()
-        sys.stdout = original
-
-
-def redirect_stderr(stderr_spec):
-    """
-    Redirect stderr to a file.
-
-    Args:
-        stderr_spec: None or tuple(path, mode) where mode is 'w' or 'a'
-
-    Returns:
-        Original stderr or None
-    """
-    if stderr_spec:
-        stderr_file, mode = stderr_spec
-        original = sys.stderr
-        sys.stderr = open(stderr_file, mode)
-        return original
-    return None
-
-
-def restore_stderr(original):
-    """Restore original stderr."""
-    if original:
-        sys.stderr.close()
-        sys.stderr = original
+def expand_path(path):
+    """Expand ~ in path."""
+    return os.path.expanduser(path)
 
 
 def prime_redirect_files(redirs):
@@ -62,7 +17,7 @@ def prime_redirect_files(redirs):
         return
     for path, mode in redirs[:-1]:
         # Open and close to apply side-effect (create/truncate or create for append)
-        with open(path, mode):
+        with open(expand_path(path), mode):
             pass
 
 
@@ -74,9 +29,12 @@ def get_redirect_spec(redirs):
         redirs: List of (path, mode) tuples
 
     Returns:
-        Last redirect tuple or None
+        Last redirect tuple (with expanded path) or None
     """
-    return redirs[-1] if redirs else None
+    if not redirs:
+        return None
+    path, mode = redirs[-1]
+    return (expand_path(path), mode)
 
 
 def prepare_redirects(stdout_redirs, stderr_redirs):
@@ -111,7 +69,7 @@ def parse_segment(segment):
     """
     parts = segment['parts']
     cmd = parts[0] if parts else None
-    args = parts[1:] if len(parts) > 1 else []
+    args = [expand_path(arg) for arg in parts[1:]] if len(parts) > 1 else []
 
     stdout_spec, stderr_spec = prepare_redirects(
         segment['stdout_redirs'],

@@ -4,8 +4,11 @@ import socket
 from pathlib import Path
 from prompt_toolkit.formatted_text import FormattedText
 from .core import execute_python, execute_external, is_python_code
-from .parsing import parse_pipeline, execute_pipeline
-from .commands import Command, is_builtin, execute_builtin
+from .core.execution import has_substitution
+from .parsing import parse_pipeline
+from .parsing.pipeline import execute_pipeline
+from .types import Command, is_builtin
+from .commands import execute_builtin
 from .ui import (
     add_to_history,
     load_history_from_file,
@@ -48,6 +51,11 @@ def main():
 
         # Add to history
         add_to_history(command)
+
+        # Handle $() and !() substitutions before pipeline parsing
+        if has_substitution(command):
+            execute_python(command)
+            continue
 
         # Parse command into pipeline segments
         pipeline = parse_pipeline(command)

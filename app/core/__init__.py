@@ -7,6 +7,7 @@ from .execution import (
     is_python_code,
 )
 from .external import execute_external
+from ..types import CommandResult
 
 __all__ = [
     'execute_python',
@@ -16,4 +17,5 @@ __all__ = [
     'is_file_path',
     'is_python_code',
     'execute_external',
+    'CommandResult',
 ]

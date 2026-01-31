@@ -5,12 +5,15 @@ import code
 import shutil
 import traceback
 from keyword import iskeyword
+from ..types import CommandResult
+from .substitution import process_substitutions
 
 
 # Persistent namespace for Python code execution
 python_namespace = {
     '__name__': '__main__',
     '__builtins__': __builtins__,
+    'CommandResult': CommandResult,
 }
 
 
@@ -18,10 +21,17 @@ def execute_python(code_line):
     """
     Execute Python code with persistent namespace.
 
+    Supports shell substitution operators:
+    - $(cmd) - Replaced with stdout of cmd as a string
+    - !(cmd) - Replaced with CommandResult object
+
     Args:
         code_line: Python code string to execute
     """
     try:
+        # Process $() and !() substitutions
+        code_line = process_substitutions(code_line, python_namespace)
+
         # Try as expression first
         try:
             result = eval(code_line, python_namespace)
@@ -125,15 +135,32 @@ def is_file_path(path_str):
 
 def is_python_name(name):
     """
-    Check if a name exists in the Python namespace.
+    Check if a name exists in the Python namespace or builtins.
 
     Args:
         name: String to check
 
     Returns:
-        bool: True if the name exists in the Python namespace
+        bool: True if the name exists in the Python namespace or builtins
     """
-    return name in python_namespace and name not in ('__name__', '__builtins__')
+    # Check direct namespace (user-defined variables)
+    if name in python_namespace and name not in ('__name__', '__builtins__'):
+        return True
+    # Check builtins (print, len, range, etc.)
+    builtins = python_namespace.get('__builtins__')
+    if isinstance(builtins, dict):
+        return name in builtins
+    return hasattr(builtins, name)
+
+
+def has_substitution(command):
+    """Check if command contains $() or !() substitution operators."""
+    i = 0
+    while i < len(command) - 1:
+        if command[i] in ('$', '!') and command[i + 1] == '(':
+            return True
+        i += 1
+    return False
 
 
 def is_python_code(command):
@@ -141,6 +168,7 @@ def is_python_code(command):
     Check if a command should be executed as Python code.
 
     Returns True if:
+    - It contains $() or !() substitution operators
     - It's a Python statement (assignment, def, import, etc.)
     - It's an expression referencing Python variables
 
@@ -151,6 +179,10 @@ def is_python_code(command):
         bool: True if should execute as Python
     """
     command = command.strip()
+
+    # Commands with $() or !() are always Python
+    if has_substitution(command):
+        return True
 
     # Try to compile as statement (exec mode)
     # Statements like "ls = 2", "def foo():", etc. only compile in exec mode

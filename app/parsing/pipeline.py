@@ -1,68 +1,55 @@
 import sys
 import os
-from .redirection import prepare_redirects
-from ..commands import run_builtin, Command, is_builtin
+import subprocess
+import threading
+from .redirection import prepare_redirects, expand_path
+from ..types import Command, is_builtin
+from ..commands import execute_builtin
 
 
-def redirect_io_for_pipeline(i, n, pipes, stdout_spec, stderr_spec):
+def execute_pipeline_captured(pipeline):
     """
-    Setup stdin/stdout/stderr for command at position i in pipeline.
+    Execute a pipeline and capture final output.
 
     Args:
-        i: Position in pipeline (0=first, 1=second, etc.)
-        n: Total number of commands
-        pipes: List of (read_fd, write_fd) tuples
-        stdout_spec: (filename, mode) for stdout redirect, or None
-        stderr_spec: (filename, mode) for stderr redirect, or None
+        pipeline: List of pipeline segments
+
+    Returns:
+        (returncode, stdout, stderr) tuple with captured output as strings
     """
-    is_first = (i == 0)
-    is_last = (i == n - 1)
+    if not pipeline:
+        return (0, '', '')
 
-    # STDIN: Where does this command read from?
-    if not is_first:
-        # Middle/last command: read from previous command's output
-        os.dup2(pipes[i-1][0], 0)  # stdin ← previous pipe
-    # (first command: stdin stays as terminal)
+    # For simplicity with captured output, use shell=True
+    # Join pipeline segments back into shell command
+    commands = []
+    for segment in pipeline:
+        cmd_str = ' '.join(segment['parts'])
+        if cmd_str:
+            commands.append(cmd_str)
 
-    # STDOUT: Where does this command write to?
-    if not is_last:
-        # First/middle command: write to next command
-        os.dup2(pipes[i][1], 1)  # stdout → next pipe
-    elif stdout_spec:
-        # Last command with > or >>: write to file
-        fd = os.open(stdout_spec[0],
-                     os.O_WRONLY | os.O_CREAT |
-                     (os.O_APPEND if stdout_spec[1] == 'a' else os.O_TRUNC),
-                     0o644)
-        os.dup2(fd, 1)  # stdout → file
-        os.close(fd)
-    # (last command without redirect: stdout stays as terminal)
+    if not commands:
+        return (0, '', '')
 
-    # STDERR: Error output (only redirect on last command)
-    if is_last and stderr_spec:
-        fd = os.open(stderr_spec[0],
-                     os.O_WRONLY | os.O_CREAT |
-                     (os.O_APPEND if stderr_spec[1] == 'a' else os.O_TRUNC),
-                     0o644)
-        os.dup2(fd, 2)  # stderr → file
-        os.close(fd)
+    full_command = ' | '.join(commands)
+    result = subprocess.run(
+        full_command,
+        shell=True,
+        capture_output=True,
+        text=True
+    )
+    return (result.returncode, result.stdout, result.stderr)
 
 
 def execute_pipeline(pipeline):
     """
-    Execute commands connected by pipes.
+    Execute commands connected by pipes (cross-platform version).
 
-    How it works:
-    1. Create pipes to connect commands
-    2. Fork a child process for each command
-    3. Each child: redirects its I/O, then runs the command
-    4. Parent: waits for all children to finish
+    Uses subprocess.Popen for external commands and threads for builtins.
+    This approach works on Windows, macOS, and Linux.
 
-    Example: ls | grep py | wc -l
-
-        ls ----[pipe0]----> grep ----[pipe1]----> wc
-                                                    |
-                                                terminal
+    Example: echo hello | grep h | wc -l
+        echo ---[pipe0]---> grep ---[pipe1]---> wc
     """
     if not pipeline:
         return
@@ -76,26 +63,27 @@ def execute_pipeline(pipeline):
                 return
 
     n = len(pipeline)
+    processes = []
+    threads = []
+    pipe_fds = []  # Track which fds we still own
+    redirect_files = []  # Track file objects we opened for cleanup
 
     # STEP 1: Create pipes
     # For n commands, we need n-1 pipes
-    # Example: 3 commands need 2 pipes
-    #   cmd0 → pipe0 → cmd1 → pipe1 → cmd2
     pipes = []
     for i in range(n - 1):
-        read_fd, write_fd = os.pipe()
-        pipes.append((read_fd, write_fd))
+        r, w = os.pipe()
+        pipes.append((r, w))
+        pipe_fds.extend([r, w])
 
-    # STEP 2: Fork and execute each command
-    pids = []
-
+    # STEP 2: Execute each command
     for i, segment in enumerate(pipeline):
         cmd_parts = segment['parts']
         if not cmd_parts:
             continue
 
         cmd = cmd_parts[0]
-        args = cmd_parts[1:]
+        args = [expand_path(arg) for arg in cmd_parts[1:]]
 
         # Get file redirects (>, >>, 2>, 2>>)
         stdout_spec, stderr_spec = prepare_redirects(
@@ -103,41 +91,106 @@ def execute_pipeline(pipeline):
             segment['stderr_redirs']
         )
 
-        # Fork: create a child process for this command
-        pid = os.fork()
+        # Determine stdin source
+        if i == 0:
+            stdin_arg = None  # First command reads from terminal
+        else:
+            stdin_arg = pipes[i-1][0]  # Read from previous pipe
 
-        if pid == 0:  # CHILD PROCESS
-            # 1. Redirect stdin/stdout/stderr
-            redirect_io_for_pipeline(i, n, pipes, stdout_spec, stderr_spec)
-
-            # 2. Close all pipe file descriptors
-            # (We already dup2'd the ones we need, close originals to prevent hanging)
-            for read_fd, write_fd in pipes:
-                os.close(read_fd)
-                os.close(write_fd)
-
-            # 3. Run the command
-            if is_builtin(cmd):
-                # Builtin: run our Python function
-                run_builtin(cmd, args)
-                sys.exit(0)  # Must exit child process
+        # Determine stdout destination
+        if i == n - 1:
+            # Last command
+            if stdout_spec:
+                stdout_arg = open(stdout_spec[0], stdout_spec[1])
+                redirect_files.append(stdout_arg)  # Track for cleanup
             else:
-                # External: replace this process with the command
-                try:
-                    os.execvp(cmd, [cmd] + args)
-                except FileNotFoundError:
-                    print(f"{cmd}: command not found", file=sys.stderr)
-                    sys.exit(127)
+                stdout_arg = None  # Write to terminal
+        else:
+            # Not last command - write to next pipe
+            stdout_arg = pipes[i][1]
 
-        # PARENT PROCESS
-        pids.append(pid)  # Remember child's PID
+        # Determine stderr destination (only for last command)
+        if i == n - 1 and stderr_spec:
+            stderr_arg = open(stderr_spec[0], stderr_spec[1])
+            redirect_files.append(stderr_arg)  # Track for cleanup
+        else:
+            stderr_arg = None
 
-    # STEP 3: Parent closes all pipes
-    # (Children have their own copies, parent must close to prevent hanging)
-    for read_fd, write_fd in pipes:
-        os.close(read_fd)
-        os.close(write_fd)
+        # Execute the command
+        if is_builtin(cmd):
+            # Builtin: run in a thread with file objects
+            # Convert stdin fd to file object (for reading)
+            if stdin_arg is not None:
+                stdin_file = os.fdopen(stdin_arg, 'r')
+                pipe_fds.remove(stdin_arg)  # os.fdopen takes ownership
+            else:
+                stdin_file = None
 
-    # STEP 4: Wait for all children to finish
-    for pid in pids:
-        os.waitpid(pid, 0)
+            # Convert stdout fd to file object (for writing)
+            if isinstance(stdout_arg, int):
+                stdout_file = os.fdopen(stdout_arg, 'w')
+                pipe_fds.remove(stdout_arg)  # os.fdopen takes ownership
+            else:
+                stdout_file = stdout_arg
+
+            stderr_file = stderr_arg
+
+            result_holder = {'returncode': 0}
+            thread = threading.Thread(
+                target=execute_builtin,
+                kwargs={
+                    'cmd': cmd,
+                    'args': args,
+                    'stdout': stdout_file,
+                    'stderr': stderr_file,
+                    'close_stdout': True,
+                    'result_holder': result_holder,
+                }
+            )
+            thread.start()
+            threads.append((thread, result_holder))
+        else:
+            # External command: use subprocess.Popen
+            try:
+                proc = subprocess.Popen(
+                    [cmd] + args,
+                    stdin=stdin_arg,
+                    stdout=stdout_arg,
+                    stderr=stderr_arg
+                )
+                processes.append(proc)
+
+                # IMPORTANT: Close parent's copies of pipe fds
+                # subprocess.Popen creates copies for the child, parent must close its copies
+                if isinstance(stdin_arg, int) and stdin_arg in pipe_fds:
+                    os.close(stdin_arg)
+                    pipe_fds.remove(stdin_arg)
+                if isinstance(stdout_arg, int) and stdout_arg in pipe_fds:
+                    os.close(stdout_arg)
+                    pipe_fds.remove(stdout_arg)
+
+            except FileNotFoundError:
+                print(f"{cmd}: command not found", file=sys.stderr)
+
+    # STEP 3: Close all remaining pipe file descriptors in parent
+    # (Ones that were passed to subprocess or os.fdopen are already removed)
+    for fd in pipe_fds:
+        try:
+            os.close(fd)
+        except:
+            pass
+
+    # STEP 4: Wait for all threads first (they need to finish writing before processes can finish reading)
+    for thread, result_holder in threads:
+        thread.join()
+
+    # STEP 5: Wait for all processes
+    for proc in processes:
+        proc.wait()
+
+    # STEP 6: Close any redirect files we opened
+    for f in redirect_files:
+        try:
+            f.close()
+        except:
+            pass

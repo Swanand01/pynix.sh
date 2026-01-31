@@ -1,19 +1,10 @@
 import os
 import sys
-from enum import Enum
 from pathlib import Path
+from ..types import Command, is_builtin
 from ..utils import executable_exists_in_path
-from ..parsing.redirection import redirect_stdout, restore_stdout, redirect_stderr, restore_stderr, parse_segment
-from ..ui.history import command_history, load_history_from_file, append_history_to_file, write_history_to_file
-
-
-class Command(str, Enum):
-    EXIT = 'exit'
-    ECHO = 'echo'
-    TYPE = 'type'
-    PWD = 'pwd'
-    CD = 'cd'
-    HISTORY = 'history'
+from ..parsing.redirection import parse_segment, expand_path
+from ..history import command_history, load_history_from_file, append_history_to_file, write_history_to_file
 
 
 command_docs = {
@@ -44,41 +35,36 @@ command_docs = {
 }
 
 
-def is_builtin(command):
-    """Check if a command is a shell builtin."""
-    return command in list(Command)
-
-
-def handle_echo(args):
+def handle_echo(args, stdout=None):
     """Handle the echo builtin command."""
-    print(' '.join(args))
+    stdout = stdout or sys.stdout
+    print(' '.join(args), file=stdout)
 
 
-def handle_type(arg):
+def handle_type(arg, stdout=None):
     """Handle the type builtin command."""
+    stdout = stdout or sys.stdout
     if is_builtin(arg):
-        print(f"{arg} is a shell builtin")
+        print(f"{arg} is a shell builtin", file=stdout)
         return
 
     executable_exists, executable_path = executable_exists_in_path(arg)
     if not executable_exists:
-        print(f"{arg}: not found")
+        print(f"{arg}: not found", file=stdout)
         return
 
-    print(f"{arg} is {executable_path}")
+    print(f"{arg} is {executable_path}", file=stdout)
 
 
-def handle_pwd():
+def handle_pwd(stdout=None):
     """Handle the pwd builtin command."""
-    print(os.getcwd())
+    stdout = stdout or sys.stdout
+    print(os.getcwd(), file=stdout)
 
 
 def handle_cd(arg):
     """Handle the cd builtin command."""
-    if arg == "~":
-        arg = str(Path.home())
-        os.chdir(arg)
-        return
+    arg = expand_path(arg)
 
     if not os.path.isdir(arg):
         sys.stderr.write(f"cd: {arg}: No such file or directory\n")
@@ -87,31 +73,34 @@ def handle_cd(arg):
     os.chdir(arg)
 
 
-def handle_history(args=None):
+def handle_history(args=None, stdout=None, stderr=None):
     """Handle the history builtin command."""
+    stdout = stdout or sys.stdout
+    stderr = stderr or sys.stderr
+
     if not args:
         cmds = list(command_history)
         start = 1
     elif args[0] == '-r':
         if len(args) < 2:
-            print("history: -r: filename argument required", file=sys.stderr)
+            print("history: -r: filename argument required", file=stderr)
             return
 
-        load_history_from_file(args[1])
+        load_history_from_file(expand_path(args[1]))
         return
     elif args[0] == '-a':
         if len(args) < 2:
-            print("history: -a: filename argument required", file=sys.stderr)
+            print("history: -a: filename argument required", file=stderr)
             return
 
-        append_history_to_file(args[1])
+        append_history_to_file(expand_path(args[1]))
         return
     elif args[0] == '-w':
         if len(args) < 2:
-            print("history: -w: filename argument required", file=sys.stderr)
+            print("history: -w: filename argument required", file=stderr)
             return
 
-        write_history_to_file(args[1])
+        write_history_to_file(expand_path(args[1]))
         return
     else:
         try:
@@ -123,12 +112,18 @@ def handle_history(args=None):
             start = 1
 
     for i, cmd in enumerate(cmds, start=start):
-        print(f"{i:5d}  {cmd}")
+        print(f"{i:5d}  {cmd}", file=stdout)
 
 
-def run_builtin(cmd, args):
+def run_builtin(cmd, args, stdout=None, stderr=None):
     """
     Execute a builtin command.
+
+    Args:
+        cmd: Command name
+        args: Command arguments
+        stdout: Optional stdout stream (defaults to sys.stdout)
+        stderr: Optional stderr stream (defaults to sys.stderr)
 
     Returns:
         True if command was 'exit', False otherwise
@@ -136,44 +131,71 @@ def run_builtin(cmd, args):
     if cmd == Command.EXIT:
         return True
     elif cmd == Command.ECHO:
-        handle_echo(args)
+        handle_echo(args, stdout=stdout)
     elif cmd == Command.TYPE:
         if args:
-            handle_type(args[0])
+            handle_type(args[0], stdout=stdout)
     elif cmd == Command.PWD:
-        handle_pwd()
+        handle_pwd(stdout=stdout)
     elif cmd == Command.CD:
         if args:
             handle_cd(args[0])
     elif cmd == Command.HISTORY:
-        handle_history(args)
+        handle_history(args, stdout=stdout, stderr=stderr)
 
     return False
 
 
-def execute_builtin(segment):
+def execute_builtin(segment=None, cmd=None, args=None,
+                    stdout=None, stderr=None,
+                    close_stdout=False, result_holder=None):
     """
-    Execute a single builtin command with redirects (runs in parent process).
+    Execute a builtin command.
+
+    Can be called two ways:
+    1. With segment (standalone): parses segment and opens redirect files
+    2. With cmd/args/stdout/stderr (pipeline): uses provided file objects
 
     Args:
         segment: Pipeline segment with 'parts', 'stdout_redirs', 'stderr_redirs'
+        cmd: Command name (used when segment is None)
+        args: Command arguments (used when segment is None)
+        stdout: Stdout file object (used when segment is None)
+        stderr: Stderr file object (used when segment is None)
+        close_stdout: If True, flush and close stdout after execution (for pipeline EOF)
+        result_holder: Dict to store returncode (for threaded execution)
 
     Returns:
         True if should exit shell, False otherwise
     """
+    owns_files = False
 
-    # Parse segment and prepare redirects
-    cmd, args, stdout_spec, stderr_spec = parse_segment(segment)
+    if segment:
+        # Standalone mode: parse segment and open redirect files
+        cmd, args, stdout_spec, stderr_spec = parse_segment(segment)
+        stdout = open(stdout_spec[0], stdout_spec[1]) if stdout_spec else None
+        stderr = open(stderr_spec[0], stderr_spec[1]) if stderr_spec else None
+        owns_files = True
 
-    # Redirect stdout/stderr
-    original_stdout = redirect_stdout(stdout_spec)
-    original_stderr = redirect_stderr(stderr_spec)
-
-    # Run the builtin
-    should_exit = run_builtin(cmd, args)
-
-    # Restore stdout/stderr
-    restore_stdout(original_stdout)
-    restore_stderr(original_stderr)
-
-    return should_exit
+    try:
+        should_exit = run_builtin(cmd, args, stdout=stdout, stderr=stderr)
+        if result_holder is not None:
+            result_holder['returncode'] = 0
+        return should_exit
+    except Exception as e:
+        print(f"Builtin error: {e}", file=stderr or sys.stderr)
+        if result_holder is not None:
+            result_holder['returncode'] = 1
+        return False
+    finally:
+        if close_stdout and stdout and stdout not in (sys.stdout, sys.stderr):
+            try:
+                stdout.flush()
+                stdout.close()
+            except:
+                pass
+        elif owns_files:
+            if stdout:
+                stdout.close()
+            if stderr:
+                stderr.close()

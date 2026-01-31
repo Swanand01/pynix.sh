@@ -1,4 +1,5 @@
-from pygments.lexer import bygroups, include, inherit
+import re
+from pygments.lexer import include, inherit
 from pygments.lexers.python import Python3Lexer
 from pygments.token import (
     Name,
@@ -76,8 +77,6 @@ class ShellLexer(Python3Lexer):
 
     def get_tokens_unprocessed(self, text, **_):
         """Check first token - if it's a valid command, enter subproc mode."""
-        import re
-
         start = 0
         state = ('root',)
 
