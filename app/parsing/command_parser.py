@@ -1,11 +1,6 @@
 import shlex
 
 
-def has_pipe(command):
-    """Check if command string contains pipe operator."""
-    return '|' in command
-
-
 def parse_pipeline(command):
     """
     Parse a pipeline command into segments.

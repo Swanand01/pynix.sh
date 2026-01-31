@@ -16,13 +16,13 @@ from ..core.execution import is_command_valid, is_file_path
 COMMAND_TOKEN_RE = r'[^=\s\[\]{}()$"\'`<&|;!]+(?=\s|$|\)|\]|\}|!)'
 
 
-def subproc_cmd_callback(lexer, match):
+def subproc_cmd_callback(_, match):
     """Yield Name.Builtin if command exists, otherwise Text."""
     cmd = match.group()
     yield match.start(), Name.Builtin if is_command_valid(cmd) else Text, cmd
 
 
-def subproc_arg_callback(lexer, match):
+def subproc_arg_callback(_, match):
     """Check if match contains a valid path and highlight it."""
     text = match.group()
     token = String if is_file_path(text) else Text

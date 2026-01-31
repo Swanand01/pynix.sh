@@ -1,6 +1,5 @@
 import os
 import sys
-from pathlib import Path
 from ..types import Command, is_builtin
 from ..utils import executable_exists_in_path
 from ..parsing.redirection import parse_segment, expand_path
@@ -62,12 +61,13 @@ def handle_pwd(stdout=None):
     print(os.getcwd(), file=stdout)
 
 
-def handle_cd(arg):
+def handle_cd(arg, stderr=None):
     """Handle the cd builtin command."""
     arg = expand_path(arg)
 
     if not os.path.isdir(arg):
-        sys.stderr.write(f"cd: {arg}: No such file or directory\n")
+        stderr = stderr or sys.stderr
+        stderr.write(f"cd: {arg}: No such file or directory\n")
         return
 
     os.chdir(arg)
@@ -135,7 +135,7 @@ def run_builtin(cmd, args, stdout=None, stderr=None):
         handle_pwd(stdout=stdout)
     elif cmd == Command.CD:
         if args:
-            handle_cd(args[0])
+            handle_cd(args[0], stderr=stderr)
     elif cmd == Command.HISTORY:
         handle_history(args, stdout=stdout)
 
