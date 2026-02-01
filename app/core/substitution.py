@@ -49,7 +49,7 @@ def find_matching_paren(text, start):
 
 def find_expansions(code):
     """
-    Find all top-level $(), !(), @() patterns in code.
+    Find all top-level $(), !(), @() patterns in code (not inside quotes).
 
     Args:
         code: Code string to search
@@ -59,19 +59,33 @@ def find_expansions(code):
     """
     expansions = []
     i = 0
+    in_single_quote = False
+    in_double_quote = False
 
     while i < len(code):
-        # Look for $( or !( or @(
-        if i < len(code) - 1 and code[i] in ('$', '!', '@') and code[i + 1] == '(':
-            operator = code[i]
-            paren_start = i + 1
-            paren_end = find_matching_paren(code, paren_start)
+        char = code[i]
 
-            if paren_end != -1:
-                content = code[paren_start + 1:paren_end]
-                expansions.append((i, paren_end + 1, operator, content))
-                i = paren_end + 1
-                continue
+        # Handle escape sequences (only in double quotes)
+        if char == '\\' and in_double_quote and i + 1 < len(code):
+            i += 2
+            continue
+
+        # Track quote state
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+        elif char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+        # Look for $( or !( or @( only outside quotes
+        elif not in_single_quote and not in_double_quote:
+            if i < len(code) - 1 and char in ('$', '!', '@') and code[i + 1] == '(':
+                paren_start = i + 1
+                paren_end = find_matching_paren(code, paren_start)
+
+                if paren_end != -1:
+                    content = code[paren_start + 1:paren_end]
+                    expansions.append((i, paren_end + 1, char, content))
+                    i = paren_end + 1
+                    continue
 
         i += 1
 

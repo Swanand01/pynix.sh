@@ -42,6 +42,15 @@ class TestPythonInterpolation(unittest.TestCase):
         self.assertEqual(expansions[0][2], '@')
         self.assertEqual(expansions[0][3], 'var')
 
+    def test_quoted_expansions_not_found(self):
+        """Test that expansions inside quotes are not expanded."""
+        self.assertEqual(find_expansions("echo '@(1+1)'"), [])
+        self.assertEqual(find_expansions('echo "@(1+1)"'), [])
+        # Mixed: only unquoted expands
+        expansions = find_expansions('echo "@(1)" @(2)')
+        self.assertEqual(len(expansions), 1)
+        self.assertEqual(expansions[0][3], '2')
+
     def test_expand_simple_variable(self):
         """Test expanding a simple variable."""
         result = expand('echo @(var)', self.namespace, context='shell')
