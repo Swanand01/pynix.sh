@@ -5,6 +5,7 @@ from app.core import execute_python
 import unittest
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -230,6 +231,80 @@ class TestRunCommandIntegration(unittest.TestCase):
         """Test run_command with both $ and @ operators."""
         run_command('x = len($(pwd)) + 1')
         self.assertEqual(python_namespace.get('x'), len(os.getcwd()) + 1)
+
+
+class TestComprehensiveIntegration(unittest.TestCase):
+    """Comprehensive tests mixing Python, shell, pipes, and redirection."""
+
+    def setUp(self):
+        clear_namespace()
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def test_python_var_in_shell_pipeline_with_redirect(self):
+        """Test @() in shell pipeline with file redirection."""
+        outfile = os.path.join(self.tmpdir, 'out.txt')
+        run_command('count = 3')
+        run_command(f'echo @(count) | cat > {outfile}')
+        with open(outfile) as f:
+            self.assertEqual(f.read().strip(), '3')
+
+    def test_capture_pipeline_into_python_var(self):
+        """Test $() capturing pipeline output into Python variable."""
+        run_command('result = $(echo "hello world" | tr a-z A-Z)')
+        self.assertEqual(python_namespace.get('result'), 'HELLO WORLD')
+
+    def test_bang_capture_with_stderr_redirect(self):
+        """Test !() capturing command with stderr."""
+        errfile = os.path.join(self.tmpdir, 'err.txt')
+        run_command(f'r = !(ls /nonexistent 2> {errfile})')
+        self.assertNotEqual(python_namespace['r'].returncode, 0)
+
+    def test_mixed_operators_with_pipeline(self):
+        """Test both @() and $() in pipeline context."""
+        run_command('prefix = "test"')
+        run_command('out = $(echo @(prefix) | tr a-z A-Z)')
+        self.assertEqual(python_namespace.get('out'), 'TEST')
+
+    def test_nested_expansion_with_redirect(self):
+        """Test nested $() with file output."""
+        outfile = os.path.join(self.tmpdir, 'nested.txt')
+        run_command('x = 5')
+        run_command(f'echo $(echo @(x * 2)) > {outfile}')
+        with open(outfile) as f:
+            self.assertEqual(f.read().strip(), '10')
+
+    def test_stdout_stderr_separate_files(self):
+        """Test redirecting stdout and stderr to separate files."""
+        outfile = os.path.join(self.tmpdir, 'stdout.txt')
+        errfile = os.path.join(self.tmpdir, 'stderr.txt')
+        # Use a command that produces both stdout and stderr
+        run_command(f'echo out > {outfile} 2> {errfile}')
+        with open(outfile) as f:
+            self.assertEqual(f.read().strip(), 'out')
+
+    def test_pipeline_with_python_expression(self):
+        """Test pipeline using Python list comprehension result."""
+        run_command('nums = [1, 2, 3]')
+        run_command(
+            'result = $(echo @(" ".join(str(n) for n in nums)) | tr " " "\\n" | sort -r)')
+        self.assertEqual(python_namespace.get('result'), '3\n2\n1')
+
+
+    def test_full_integration(self):
+        """Command with @(), pipe, stdout redirect, and stderr redirect."""
+        outfile = os.path.join(self.tmpdir, 'out.txt')
+        errfile = os.path.join(self.tmpdir, 'err.txt')
+
+        run_command('msg = "hello"')
+        run_command(f'echo @(msg) | tr a-z A-Z > {outfile} 2> {errfile}')
+
+        with open(outfile) as f:
+            self.assertEqual(f.read().strip(), 'HELLO')
+        self.assertTrue(os.path.exists(errfile))
 
 
 if __name__ == '__main__':
