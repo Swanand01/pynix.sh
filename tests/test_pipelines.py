@@ -8,7 +8,7 @@ from io import StringIO
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.parsing import parse_pipeline
-from app.parsing.pipeline import execute_pipeline
+from app.core.pipeline import execute_pipeline
 
 
 class TestPipelines(unittest.TestCase):

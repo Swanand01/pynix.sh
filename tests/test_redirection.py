@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.commands.builtins import execute_builtin
 from app.parsing import parse_pipeline
-from app.parsing.pipeline import execute_pipeline
+from app.core.pipeline import execute_pipeline
 
 
 class TestRedirection(unittest.TestCase):

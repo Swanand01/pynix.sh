@@ -1,5 +1,5 @@
 from app.parsing import parse_pipeline
-from app.parsing.pipeline import execute_pipeline_captured
+from app.core.pipeline import execute_pipeline_captured
 from app.core.external import execute_external
 import unittest
 import os

@@ -21,29 +21,29 @@ class TestPythonExecution(unittest.TestCase):
 
     def test_is_python_code_assignment(self):
         """Test detecting Python assignments."""
-        self.assertTrue(is_python_code('x = 5'))
-        self.assertTrue(is_python_code('ls = 2'))
-        self.assertTrue(is_python_code('my_var = "hello"'))
+        self.assertTrue(is_python_code('x = 5')[0])
+        self.assertTrue(is_python_code('ls = 2')[0])
+        self.assertTrue(is_python_code('my_var = "hello"')[0])
 
     def test_is_python_code_shell_command(self):
         """Test detecting shell commands."""
-        self.assertFalse(is_python_code('ls'))
-        self.assertFalse(is_python_code('ls -la'))
-        self.assertFalse(is_python_code('grep test'))
-        self.assertFalse(is_python_code('cat file.txt'))
+        self.assertFalse(is_python_code('ls')[0])
+        self.assertFalse(is_python_code('ls -la')[0])
+        self.assertFalse(is_python_code('grep test')[0])
+        self.assertFalse(is_python_code('cat file.txt')[0])
 
     def test_is_python_code_expression(self):
         """Test detecting Python expressions with literals."""
-        self.assertTrue(is_python_code('2 + 2'))
-        self.assertTrue(is_python_code('[1, 2, 3]'))
-        self.assertTrue(is_python_code('{"a": 1}'))
+        self.assertTrue(is_python_code('2 + 2')[0])
+        self.assertTrue(is_python_code('[1, 2, 3]')[0])
+        self.assertTrue(is_python_code('{"a": 1}')[0])
 
     def test_is_python_code_builtin_calls(self):
         """Test detecting Python builtin function calls."""
-        self.assertTrue(is_python_code('print("hello")'))
-        self.assertTrue(is_python_code('len([1, 2, 3])'))
-        self.assertTrue(is_python_code('range(10)'))
-        self.assertTrue(is_python_code('sum([1, 2, 3])'))
+        self.assertTrue(is_python_code('print("hello")')[0])
+        self.assertTrue(is_python_code('len([1, 2, 3])')[0])
+        self.assertTrue(is_python_code('range(10)')[0])
+        self.assertTrue(is_python_code('sum([1, 2, 3])')[0])
 
     def test_is_python_name_builtins(self):
         """Test that builtins are recognized as Python names."""
@@ -129,8 +129,8 @@ class TestPythonExecution(unittest.TestCase):
         """Test that Python code isn't confused with shell commands."""
         # After assigning 'x', 'x + 1' should be Python
         execute_python('x = 10')
-        self.assertTrue(is_python_code('x + 1'))
-        self.assertTrue(is_python_code('x'))
+        self.assertTrue(is_python_code('x + 1')[0])
+        self.assertTrue(is_python_code('x')[0])
 
     def test_python_syntax_error_handling(self):
         """Test that syntax errors are handled gracefully."""

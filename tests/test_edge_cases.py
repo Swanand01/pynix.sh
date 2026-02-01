@@ -6,7 +6,7 @@ from io import StringIO
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.parsing import parse_pipeline
-from app.parsing.pipeline import execute_pipeline
+from app.core.pipeline import execute_pipeline
 
 
 class TestEdgeCases(unittest.TestCase):
@@ -15,8 +15,7 @@ class TestEdgeCases(unittest.TestCase):
     def test_empty_command(self):
         """Test handling empty command."""
         pipeline = parse_pipeline("")
-        self.assertEqual(len(pipeline), 1)
-        self.assertEqual(pipeline[0]['parts'], [])
+        self.assertEqual(len(pipeline), 0)
 
     def test_cd_in_pipeline_rejected(self):
         """Test that cd in pipeline is rejected."""
