@@ -1,4 +1,10 @@
+import os
 import shlex
+
+
+def expand_path(path):
+    """Expand ~ in path."""
+    return os.path.expanduser(path)
 
 
 def parse_pipeline(command):
@@ -15,21 +21,27 @@ def parse_pipeline(command):
             {'parts': ['grep', 'py'], 'stdout_redirs': [('out.txt', 'w')], 'stderr_redirs': []}
         ]
     """
-    segments = command.split('|')
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+
+    # Split on | tokens
+    segments = []
+    current = []
+    for token in tokens:
+        if token != '|':
+            current.append(token)
+            continue
+        if current:
+            segments.append(current)
+        current = []
+    if current:
+        segments.append(current)
+
     pipeline = []
-
-    for segment in segments:
-        segment = segment.strip()
-
-        # Tokenize the segment
-        try:
-            parts = shlex.split(segment)
-        except ValueError:
-            parts = segment.split()
-
-        # Parse redirections for this segment
+    for parts in segments:
         parts, stdout_redirs, stderr_redirs = parse_redirection(parts)
-
         pipeline.append({
             'parts': parts,
             'stdout_redirs': stdout_redirs,
@@ -76,3 +88,53 @@ def parse_redirection(parts):
         i += 1
 
     return cleaned, stdout_redirs, stderr_redirs
+
+
+def prepare_redirects(stdout_redirs, stderr_redirs):
+    """
+    Prime redirect files and get active specs.
+
+    Args:
+        stdout_redirs: List of stdout redirect tuples
+        stderr_redirs: List of stderr redirect tuples
+
+    Returns:
+        (stdout_spec, stderr_spec) - Active redirect specs or None
+    """
+    # Prime earlier redirect files (create/truncate side effects)
+    for redirs in (stdout_redirs, stderr_redirs):
+        if redirs:
+            for path, mode in redirs[:-1]:
+                with open(expand_path(path), mode):
+                    pass
+
+    # Get active (last) redirect spec
+    def get_spec(redirs):
+        if not redirs:
+            return None
+        path, mode = redirs[-1]
+        return (expand_path(path), mode)
+
+    return get_spec(stdout_redirs), get_spec(stderr_redirs)
+
+
+def parse_segment(segment):
+    """
+    Extract command info and prepare redirects from a pipeline segment.
+
+    Args:
+        segment: Dict with 'parts', 'stdout_redirs', 'stderr_redirs'
+
+    Returns:
+        (cmd, args, stdout_spec, stderr_spec)
+    """
+    parts = segment['parts']
+    cmd = parts[0] if parts else None
+    args = [expand_path(arg) for arg in parts[1:]] if len(parts) > 1 else []
+
+    stdout_spec, stderr_spec = prepare_redirects(
+        segment['stdout_redirs'],
+        segment['stderr_redirs']
+    )
+
+    return cmd, args, stdout_spec, stderr_spec

@@ -1,3 +1,7 @@
+import code
+import os
+import socket
+from pathlib import Path
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.shortcuts import CompleteStyle
@@ -5,11 +9,58 @@ from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles.pygments import style_from_pygments_cls
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from pygments.styles import get_style_by_name
 from .shell_lexer import ShellLexer
 from .completer import ShellCompleter
-from ..core import is_python_code_complete, get_auto_indent
+
+
+# Cache for static prompt parts
+_prompt_cache = {}
+
+
+def is_python_code_complete(text):
+    """Check if Python code is complete and ready to execute."""
+    try:
+        return code.compile_command(text) is not None
+    except SyntaxError:
+        return True
+
+
+def get_auto_indent(text):
+    """Calculate auto-indent for Python code based on the last line."""
+    for line in reversed(text.split('\n')):
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
+            if line.rstrip().endswith(':'):
+                return ' ' * (indent + 4)
+            return ' ' * indent
+    return ''
+
+
+def get_prompt():
+    """Build the shell prompt text."""
+    if 'user' not in _prompt_cache:
+        _prompt_cache['user'] = os.environ.get(
+            "USER") or os.environ.get("USERNAME") or ""
+        _prompt_cache['host'] = socket.gethostname()
+        _prompt_cache['home'] = str(Path.home())
+
+    user = _prompt_cache['user']
+    host = _prompt_cache['host']
+    home = _prompt_cache['home']
+
+    cwd = os.getcwd()
+    prompt_dir = cwd.replace(home, "~") if cwd.startswith(home) else cwd
+
+    return FormattedText([
+        ('class:pygments.name.function', user),
+        ('class:pygments.operator', '@'),
+        ('class:pygments.name.class', f"{host} "),
+        ('class:pygments.literal.string', prompt_dir),
+        ('class:pygments.operator', ' > '),
+    ])
 
 
 def create_key_bindings():
@@ -48,6 +99,7 @@ def create_prompt_session(builtin_commands=None, histfile=None):
     style = style_from_pygments_cls(get_style_by_name('dracula'))
     completer = ShellCompleter(builtin_commands)
     history = FileHistory(histfile) if histfile else None
+
     return PromptSession(
         lexer=PygmentsLexer(ShellLexer),
         style=style,

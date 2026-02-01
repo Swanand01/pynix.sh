@@ -1,7 +1,6 @@
 from ..types import CommandResult
-from ..parsing import parse_pipeline
-from ..parsing.pipeline import execute_pipeline_captured
-from .external import execute_external
+from .external import execute_shell
+from .execution import execute_python
 
 
 def find_matching_paren(text, start):
@@ -26,9 +25,9 @@ def find_matching_paren(text, start):
     while i < len(text) and depth > 0:
         char = text[i]
 
-        # Handle escape sequences in quotes
-        if i > 0 and text[i - 1] == '\\':
-            i += 1
+        # Handle escape sequences (only in double quotes)
+        if char == '\\' and in_double_quote and i + 1 < len(text):
+            i += 2
             continue
 
         # Track quote state
@@ -48,102 +47,101 @@ def find_matching_paren(text, start):
     return i - 1 if depth == 0 else -1
 
 
-def find_substitutions(code):
+def find_expansions(code):
     """
-    Find all $() and !() substitutions in code.
+    Find all top-level $(), !(), @() patterns in code.
 
     Args:
-        code: Python code string
+        code: Code string to search
 
     Returns:
-        List of (start, end, operator, command) tuples, sorted innermost-first
+        List of (start, end, operator, content) tuples, sorted right-to-left
     """
-    substitutions = []
+    expansions = []
     i = 0
 
     while i < len(code):
-        # Look for $( or !(
-        if i < len(code) - 1 and code[i] in ('$', '!') and code[i + 1] == '(':
+        # Look for $( or !( or @(
+        if i < len(code) - 1 and code[i] in ('$', '!', '@') and code[i + 1] == '(':
             operator = code[i]
             paren_start = i + 1
             paren_end = find_matching_paren(code, paren_start)
 
             if paren_end != -1:
-                command = code[paren_start + 1:paren_end]
-                substitutions.append((i, paren_end + 1, operator, command))
+                content = code[paren_start + 1:paren_end]
+                expansions.append((i, paren_end + 1, operator, content))
                 i = paren_end + 1
                 continue
 
         i += 1
 
     # Sort by start position descending (process from right to left)
-    # This ensures replacements don't shift indices of earlier substitutions
-    return sorted(substitutions, key=lambda x: x[0], reverse=True)
+    return sorted(expansions, key=lambda x: x[0], reverse=True)
 
 
-def execute_substitution(operator, command):
+def stringify(value):
+    """Convert a value to string for shell interpolation."""
+    if isinstance(value, str):
+        return value
+    if hasattr(value, '__iter__'):
+        return ' '.join(str(x) for x in value)
+    return str(value)
+
+
+def expand(code, namespace, context='python', expansions=None):
     """
-    Execute a shell command and return the result.
+    Recursively expand all $(), !(), and @() patterns.
 
     Args:
-        operator: '$' for string output, '!' for CommandResult
-        command: Shell command string to execute
+        code: Code string with expansion patterns
+        namespace: Python namespace dict for evaluation and storage
+        context: 'python' if result will be Python code, 'shell' for shell command
+        expansions: Pre-found expansions (optional, to avoid re-scanning)
 
     Returns:
-        For $: stdout string (stripped)
-        For !: CommandResult object
+        Expanded code with all patterns replaced
     """
-    # Parse the command
-    pipeline = parse_pipeline(command)
+    if expansions is None:
+        expansions = find_expansions(code)
 
-    # Execute and capture output
-    if len(pipeline) == 1:
-        # Single command
-        result = execute_external(pipeline[0], capture=True)
-        if result is None:
-            returncode, stdout, stderr = 127, '', f"{command}: command not found\n"
-        else:
-            returncode, stdout, stderr = result
-    else:
-        # Pipeline
-        returncode, stdout, stderr = execute_pipeline_captured(pipeline)
-
-    # Return based on operator type
-    if operator == '$':
-        return stdout.rstrip('\n')
-    else:
-        return CommandResult(returncode, stdout, stderr)
-
-
-def process_substitutions(code, namespace):
-    """
-    Process all $() and !() substitutions in code.
-
-    Executes shell commands and replaces substitutions with placeholder
-    variables that hold the results.
-
-    Args:
-        code: Python code string with substitutions
-        namespace: Python namespace dict to store results
-
-    Returns:
-        Processed code with substitutions replaced by variable references
-    """
-    substitutions = find_substitutions(code)
-
-    if not substitutions:
+    if not expansions:
         return code
 
-    # Process each substitution (right to left to preserve indices)
-    for i, (start, end, operator, command) in enumerate(substitutions):
-        # Execute the command
-        result = execute_substitution(operator, command)
+    # Process each expansion (right to left to preserve indices)
+    for i, (start, end, operator, content) in enumerate(expansions):
+        # Recursively expand the content first (handles nesting)
+        expanded_content = expand(content, namespace,
+                                  context='python' if operator == '@' else 'shell')
 
-        # Store result in namespace with a unique variable name
-        var_name = f'_subst_{i}'
-        namespace[var_name] = result
+        if operator == '@':
+            # Python expression - evaluate and stringify
+            try:
+                result = execute_python(
+                    expanded_content, return_value=True, namespace=namespace)
+                result = stringify(result)
+            except Exception as e:
+                raise ValueError(f"Error evaluating @({content}): {e}")
 
-        # Replace substitution with variable reference
-        code = code[:start] + var_name + code[end:]
+            # Direct substitution for shell context
+            code = code[:start] + result + code[end:]
+
+        elif operator in ('$', '!'):
+            # Shell command - execute and capture result
+            returncode, stdout, stderr = execute_shell(
+                expanded_content, capture=True)
+
+            if context == 'shell':
+                # Direct substitution for shell context
+                result = stdout.rstrip('\n')
+                code = code[:start] + result + code[end:]
+            else:
+                # Python context - store in namespace
+                if operator == '$':
+                    result = stdout.rstrip('\n')
+                else:  # operator == '!'
+                    result = CommandResult(returncode, stdout, stderr)
+                var_name = f'__pynix_sub_{i}'
+                namespace[var_name] = result
+                code = code[:start] + var_name + code[end:]
 
     return code

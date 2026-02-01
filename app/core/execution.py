@@ -1,12 +1,8 @@
 import ast
-import os
+import re
 import sys
-import code
-import shutil
 import traceback
-from keyword import iskeyword
-from ..types import CommandResult
-from .substitution import process_substitutions
+from ..types import CommandResult, is_builtin
 
 
 # Persistent namespace for Python code execution
@@ -17,203 +13,131 @@ python_namespace = {
 }
 
 
-def execute_python(code_line):
+def get_namespace():
+    """Get the shared Python namespace."""
+    return python_namespace
+
+
+def execute_python(code_line, return_value=False, namespace=None):
     """
     Execute Python code with persistent namespace.
 
-    Supports shell substitution operators:
-    - $(cmd) - Replaced with stdout of cmd as a string
-    - !(cmd) - Replaced with CommandResult object
-
     Args:
-        code_line: Python code string to execute
-    """
-    try:
-        # Process $() and !() substitutions
-        code_line = process_substitutions(code_line, python_namespace)
+        code_line: Python code string to execute (already expanded)
+        return_value: If True, return the result instead of printing it
+        namespace: Namespace dict (defaults to python_namespace)
 
+    Returns:
+        The evaluated result if return_value=True, else None
+
+    Raises:
+        ValueError: If return_value=True and evaluation fails
+    """
+    if namespace is None:
+        namespace = python_namespace
+    try:
         # Try as expression first
         try:
-            result = eval(code_line, python_namespace)
+            result = eval(code_line, namespace)
+            if return_value:
+                return result
             if result is not None:
                 print(result)
         except SyntaxError:
             # Not an expression, execute as statement
-            exec(code_line, python_namespace)
+            exec(code_line, namespace)
     except KeyboardInterrupt:
-        # User pressed Ctrl+C during execution
+        if return_value:
+            raise ValueError("Interrupted")
         print("\nKeyboardInterrupt", file=sys.stderr)
     except SyntaxError as e:
+        if return_value:
+            raise ValueError(f"SyntaxError: {e.msg}")
         if e.text and e.offset:
             print(f"  {e.text.rstrip()}", file=sys.stderr)
             print(f"  {' ' * (e.offset - 1)}^", file=sys.stderr)
         print(f"SyntaxError: {e.msg}", file=sys.stderr)
-    except Exception:
+    except Exception as e:
+        if return_value:
+            raise ValueError(f"Error evaluating '{code_line}': {e}")
         traceback.print_exc()
 
 
-def is_command_valid(cmd):
-    """
-    Check if a command exists in PATH.
-
-    Args:
-        cmd: Command name to check
-
-    Returns:
-        bool: True if command exists and is not a Python keyword
-    """
-    # Don't highlight Python keywords as shell commands
-    if iskeyword(cmd):
-        return False
-    # Check if command exists in PATH
-    return shutil.which(cmd) is not None
-
-
-def is_python_code_complete(text):
-    """
-    Check if Python code is complete and ready to execute.
-
-    Args:
-        text: Python code string
-
-    Returns:
-        bool: True if code is complete, False if more input is needed
-        None: If there's a syntax error
-    """
-    try:
-        compiled = code.compile_command(text)
-        # None means incomplete, needs more input
-        # A code object means complete
-        return compiled is not None
-    except SyntaxError:
-        # Syntax error means code is malformed but "complete"
-        return True
-
-
-def get_auto_indent(text):
-    """
-    Calculate auto-indent for Python code based on the last line.
-
-    Args:
-        text: Current text in the buffer
-
-    Returns:
-        str: String of spaces for indentation
-    """
-    lines = text.split('\n')
-    if not lines:
-        return ''
-
-    # Find the last non-empty line
-    for line in reversed(lines):
-        if line.strip():
-            indent = len(line) - len(line.lstrip())
-            # If line ends with colon, increase indent
-            if line.rstrip().endswith(':'):
-                return ' ' * (indent + 4)
-            # Otherwise maintain current indent
-            return ' ' * indent
-    return ''
-
-
-def is_file_path(path_str):
-    """
-    Check if a string is a valid file path.
-
-    Args:
-        path_str: String to check
-
-    Returns:
-        bool: True if it's a valid existing path
-    """
-    try:
-        path = os.path.expanduser(path_str)
-        return os.path.exists(path)
-    except (OSError, ValueError):
-        return False
-
-
 def is_python_name(name):
-    """
-    Check if a name exists in the Python namespace or builtins.
-
-    Args:
-        name: String to check
-
-    Returns:
-        bool: True if the name exists in the Python namespace or builtins
-    """
-    # Check direct namespace (user-defined variables)
+    """Check if a name exists in the Python namespace or builtins."""
     if name in python_namespace and name not in ('__name__', '__builtins__'):
         return True
-    # Check builtins (print, len, range, etc.)
     builtins = python_namespace.get('__builtins__')
     if isinstance(builtins, dict):
         return name in builtins
     return hasattr(builtins, name)
 
 
-def has_substitution(command):
-    """Check if command contains $() or !() substitution operators."""
-    i = 0
-    while i < len(command) - 1:
-        if command[i] in ('$', '!') and command[i + 1] == '(':
-            return True
-        i += 1
-    return False
+def replace_expansions_with_placeholder(command):
+    """Replace $(), !(), @() with placeholder for Python parsing."""
+    from .substitution import find_expansions
+
+    expansions = find_expansions(command)
+    result = command
+    for start, end, _, _ in expansions:
+        result = result[:start] + '__pynix_xp__' + result[end:]
+    return result, expansions
+
+
+def get_first_name(command):
+    """Extract the first Python identifier from a command."""
+    match = re.match(r'[a-zA-Z_][a-zA-Z0-9_]*', command)
+    return match.group() if match else None
 
 
 def is_python_code(command):
     """
     Check if a command should be executed as Python code.
 
-    Returns True if:
-    - It contains $() or !() substitution operators
-    - It's a Python statement (assignment, def, import, etc.)
-    - It's an expression referencing Python variables
-
-    Args:
-        command: Command string to check
+    If all names in the expression exist
+    in the current Python context, it's Python. Otherwise, it's shell.
 
     Returns:
-        bool: True if should execute as Python
+        (is_python, expansions) tuple
     """
     command = command.strip()
+    parseable, expansions = replace_expansions_with_placeholder(command)
 
-    # Commands with $() or !() are always Python
-    if has_substitution(command):
-        return True
-
-    # Try to compile as statement (exec mode)
-    # Statements like "ls = 2", "def foo():", etc. only compile in exec mode
     try:
-        compile(command, '<string>', 'exec')
-        # If it compiles in exec mode, check if it's NOT just a simple expression
-        try:
-            compile(command, '<string>', 'eval')
-            # It's a valid expression
-            # For simple identifiers, check if they're in namespace
-            if command.isidentifier():
-                return is_python_name(command)
-
-            # For complex expressions, check if all names are defined
-            # This prevents "ls -la" (valid Python: ls minus la) from being treated as Python
-            try:
-                tree = ast.parse(command, mode='eval')
-                # Check if all names used in the expression exist in namespace
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Name):
-                        if not is_python_name(node.id):
-                            # Name not in namespace - probably a shell command
-                            return False
-                # All names are defined - it's Python code
-                return True
-            except:
-                # If AST parsing fails for some reason, be conservative
-                return False
-        except SyntaxError:
-            # Compiles as statement but not expression - it's Python code (assignment, etc.)
-            return True
+        # Must be valid Python syntax
+        compile(parseable, '<string>', 'exec')
     except SyntaxError:
-        # Doesn't compile as Python - it's a shell command
-        return False
+        # Invalid syntax - check if first token is a Python name
+        first = get_first_name(parseable)
+        if first and not is_builtin(first) and is_python_name(first):
+            return True, expansions
+        return False, expansions
+
+    # Statement (not expression) - treat as Python
+    try:
+        compile(parseable, '<string>', 'eval')
+    except SyntaxError:
+        return True, expansions
+
+    # Single identifier
+    if parseable.isidentifier():
+        if parseable == '__pynix_xp__':
+            return True, expansions
+        if is_builtin(parseable):
+            return False, expansions
+        return is_python_name(parseable), expansions
+
+    # Expression - check if all names exist in Python context
+    try:
+        tree = ast.parse(parseable, mode='eval')
+    except SyntaxError:
+        return False, expansions
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            if node.id == '__pynix_xp__':
+                continue
+            if not is_python_name(node.id):
+                return False, expansions
+
+    return True, expansions

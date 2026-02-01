@@ -1,6 +1,50 @@
 import subprocess
 import sys
-from ..parsing.redirection import parse_segment
+from ..parsing import parse_pipeline, parse_segment
+from .pipeline import execute_pipeline, execute_pipeline_captured
+from ..types import is_builtin
+from ..commands import execute_builtin
+
+
+def execute_shell(command, capture=False):
+    """
+    Execute a shell command (pipeline, builtin, or external).
+
+    Args:
+        command: Shell command string
+        capture: If True, capture and return (returncode, stdout, stderr)
+
+    Returns:
+        If capture=False: True if shell should exit, False otherwise
+        If capture=True: (returncode, stdout, stderr) tuple
+    """
+    pipeline = parse_pipeline(command)
+
+    if capture:
+        # Capture mode - return output
+        if len(pipeline) == 1:
+            result = execute_external(pipeline[0], capture=True)
+            if result is None:
+                return 127, '', f"{command}: command not found\n"
+            return result
+        else:
+            return execute_pipeline_captured(pipeline)
+
+    # Interactive mode - display output
+    if len(pipeline) > 1:
+        execute_pipeline(pipeline)
+        return False
+
+    segment = pipeline[0]
+    cmd = segment['parts'][0] if segment['parts'] else None
+
+    if is_builtin(cmd):
+        return execute_builtin(segment)
+
+    if not execute_external(segment):
+        print(f"{cmd}: command not found", file=sys.stderr)
+
+    return False
 
 
 def execute_external(segment, capture=False):
@@ -30,6 +74,8 @@ def execute_external(segment, capture=False):
             return (result.returncode, result.stdout, result.stderr)
         except FileNotFoundError:
             return None
+        except KeyboardInterrupt:
+            return (130, '', '')
 
     # Open file handles for redirects
     stdout_arg = open(stdout_spec[0], stdout_spec[1]) if stdout_spec else None
@@ -43,7 +89,9 @@ def execute_external(segment, capture=False):
         return False
     except PermissionError:
         print(f"{cmd}: Permission denied", file=sys.stderr)
-        return True  # Command was found but not executable
+        return True
+    except KeyboardInterrupt:
+        return True
     finally:
         # Close file handles
         if stdout_arg:

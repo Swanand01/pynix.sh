@@ -1,7 +1,8 @@
-from .command_parser import parse_pipeline
-from .redirection import parse_segment
+from .command_parser import parse_pipeline, parse_segment, expand_path, prepare_redirects
 
 __all__ = [
     'parse_pipeline',
     'parse_segment',
+    'expand_path',
+    'prepare_redirects',
 ]

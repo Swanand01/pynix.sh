@@ -1,8 +1,8 @@
 import os
 import sys
+import shutil
 from ..types import Command, is_builtin
-from ..utils import executable_exists_in_path
-from ..parsing.redirection import parse_segment, expand_path
+from ..parsing import parse_segment, expand_path
 
 HISTFILE = os.path.expanduser('~/.pynix_history')
 
@@ -47,12 +47,12 @@ def handle_type(arg, stdout=None):
         print(f"{arg} is a shell builtin", file=stdout)
         return
 
-    executable_exists, executable_path = executable_exists_in_path(arg)
-    if not executable_exists:
+    path = shutil.which(arg)
+    if path is None:
         print(f"{arg}: not found", file=stdout)
         return
 
-    print(f"{arg} is {executable_path}", file=stdout)
+    print(f"{arg} is {path}", file=stdout)
 
 
 def handle_pwd(stdout=None):
@@ -105,8 +105,7 @@ def handle_history(args=None, stdout=None, histfile=None):
         except ValueError:
             pass
 
-    start = 1
-    for i, cmd in enumerate(cmds, start=start):
+    for i, cmd in enumerate(cmds, start=1):
         display = cmd.split('\n')[0] if '\n' in cmd else cmd
         print(f"{i:5d}  {display}", file=stdout)
 

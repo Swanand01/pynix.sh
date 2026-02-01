@@ -15,7 +15,7 @@ class Command(str, Enum):
 
 def is_builtin(command):
     """Check if a command is a shell builtin."""
-    return command in list(Command)
+    return command in Command._value2member_map_
 
 
 class CommandResult:

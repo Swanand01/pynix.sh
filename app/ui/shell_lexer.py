@@ -1,4 +1,7 @@
+import os
 import re
+import shutil
+from keyword import iskeyword
 from pygments.lexer import include, inherit
 from pygments.lexers.python import Python3Lexer
 from pygments.token import (
@@ -9,23 +12,35 @@ from pygments.token import (
     Text,
     Whitespace,
 )
-from ..core.execution import is_command_valid, is_file_path
 
 
 # Simple command pattern (like xonsh's COMMAND_TOKEN_RE)
 COMMAND_TOKEN_RE = r'[^=\s\[\]{}()$"\'`<&|;!]+(?=\s|$|\)|\]|\}|!)'
 
 
+def is_valid_command(cmd):
+    """Check if command exists in PATH and is not a Python keyword."""
+    return not iskeyword(cmd) and shutil.which(cmd) is not None
+
+
+def is_valid_path(path):
+    """Check if path exists."""
+    try:
+        return os.path.exists(os.path.expanduser(path))
+    except (OSError, ValueError):
+        return False
+
+
 def subproc_cmd_callback(_, match):
     """Yield Name.Builtin if command exists, otherwise Text."""
     cmd = match.group()
-    yield match.start(), Name.Builtin if is_command_valid(cmd) else Text, cmd
+    yield match.start(), Name.Builtin if is_valid_command(cmd) else Text, cmd
 
 
 def subproc_arg_callback(_, match):
     """Check if match contains a valid path and highlight it."""
     text = match.group()
-    token = String if is_file_path(text) else Text
+    token = String if is_valid_path(text) else Text
     yield match.start(), token, text
 
 
@@ -88,7 +103,7 @@ class ShellLexer(Python3Lexer):
             cmd = m.group(2)
 
             # Check if it's a valid shell command (not a Python keyword)
-            if is_command_valid(cmd):
+            if is_valid_command(cmd):
                 yield m.start(2), Name.Builtin, cmd
                 start = m.end(2)
                 state = ('subproc',)

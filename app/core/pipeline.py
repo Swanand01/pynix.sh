@@ -1,8 +1,9 @@
 import sys
 import os
+import shlex
 import subprocess
 import threading
-from .redirection import prepare_redirects, expand_path
+from ..parsing import prepare_redirects, expand_path
 from ..types import Command, is_builtin
 from ..commands import execute_builtin
 
@@ -20,11 +21,10 @@ def execute_pipeline_captured(pipeline):
     if not pipeline:
         return (0, '', '')
 
-    # For simplicity with captured output, use shell=True
     # Join pipeline segments back into shell command
     commands = []
     for segment in pipeline:
-        cmd_str = ' '.join(segment['parts'])
+        cmd_str = ' '.join(shlex.quote(part) for part in segment['parts'])
         if cmd_str:
             commands.append(cmd_str)
 
@@ -58,7 +58,7 @@ def execute_pipeline(pipeline):
     if len(pipeline) > 1:
         for segment in pipeline:
             cmd = segment['parts'][0] if segment['parts'] else None
-            if cmd in [Command.CD, Command.EXIT]:
+            if cmd in (Command.CD, Command.EXIT):
                 print(f"{cmd}: cannot be used in pipeline", file=sys.stderr)
                 return
 
@@ -177,7 +177,7 @@ def execute_pipeline(pipeline):
     for fd in pipe_fds:
         try:
             os.close(fd)
-        except:
+        except OSError:
             pass
 
     # STEP 4: Wait for all threads first (they need to finish writing before processes can finish reading)
@@ -192,5 +192,5 @@ def execute_pipeline(pipeline):
     for f in redirect_files:
         try:
             f.close()
-        except:
+        except OSError:
             pass
