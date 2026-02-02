@@ -1,3 +1,4 @@
+import shlex
 from ..types import CommandResult
 from .external import execute_shell
 from .execution import execute_python
@@ -131,7 +132,7 @@ def expand(code, namespace, context='python', expansions=None):
             # Python expression - evaluate and stringify
             try:
                 result = execute_python(
-                    expanded_content, return_value=True, namespace=namespace)
+                    expanded_content, namespace=namespace, interactive=False)
                 result = stringify(result)
             except Exception as e:
                 raise ValueError(f"Error evaluating @({content}): {e}")
@@ -145,8 +146,13 @@ def expand(code, namespace, context='python', expansions=None):
                 expanded_content, capture=True)
 
             if context == 'shell':
-                # Direct substitution for shell context
+                # Split by newlines and quote each line for safe shell interpolation
                 result = stdout.rstrip('\n')
+                if result:
+                    lines = result.split('\n')
+                    result = ' '.join(shlex.quote(line) for line in lines)
+                else:
+                    result = ''
                 code = code[:start] + result + code[end:]
             else:
                 # Python context - store in namespace
