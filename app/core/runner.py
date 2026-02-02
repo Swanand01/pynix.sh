@@ -15,15 +15,6 @@ def run_command(command):
     Returns:
         True if shell should exit, False otherwise
     """
-    # Handle multiline input by running each line separately
-    if '\n' in command:
-        for line in command.split('\n'):
-            line = line.strip()
-            if line:
-                if run_single_command(line):
-                    return True
-        return False
-
     return run_single_command(command)
 
 
@@ -35,6 +26,7 @@ def run_single_command(command):
 
     # Execute segments sequentially with short-circuit logic
     last_returncode = 0
+    cleanup_keys = set()  # Track temp variables to clean up
 
     for operator, cmd_segment in segments:
         # Short-circuit evaluation
@@ -52,6 +44,9 @@ def run_single_command(command):
         try:
             expanded = expand(cmd_segment, namespace,
                               context=context, expansions=expansions)
+            # Track any new substitution variables created
+            cleanup_keys.update(
+                k for k in namespace if k.startswith('__pynix_sub_'))
         except ValueError as e:
             print(f"Expansion error: {e}", file=sys.stderr)
             last_returncode = 1
@@ -59,19 +54,17 @@ def run_single_command(command):
 
         # Execute based on detected type
         if is_python:
-            execute_python(expanded)
-            last_returncode = 0  # Python code doesn't fail
+            success = execute_python(expanded)
+            last_returncode = 0 if success else 1
         else:
             should_exit, returncode = execute_shell(expanded)
             last_returncode = returncode
             if should_exit:
-                # Clean up substitution variables before exiting
-                for key in [k for k in namespace if k.startswith('__pynix_sub_')]:
-                    del namespace[key]
                 return True
 
-    # Clean up substitution variables
-    for key in [k for k in namespace if k.startswith('__pynix_sub_')]:
-        del namespace[key]
+    # Clean up all substitution variables collected during execution
+    for key in cleanup_keys:
+        if key in namespace:
+            del namespace[key]
 
     return False
