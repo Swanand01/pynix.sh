@@ -1,8 +1,9 @@
 import ast
+import keyword
 import re
 import sys
 import traceback
-from ..types import CommandResult, is_builtin
+from ..types import CommandResult
 
 
 # Persistent namespace for Python code execution
@@ -18,49 +19,65 @@ def get_namespace():
     return python_namespace
 
 
-def execute_python(code_line, return_value=False, namespace=None):
+def execute_python(code_line, namespace=None, interactive=True):
     """
     Execute Python code with persistent namespace.
 
     Args:
         code_line: Python code string to execute (already expanded)
-        return_value: If True, return the result instead of printing it
         namespace: Namespace dict (defaults to python_namespace)
+        interactive: If True, print errors to stderr and return success bool.
+                    If False, raise errors and return the evaluation result.
 
     Returns:
-        The evaluated result if return_value=True, else None
+        If interactive=True: bool (True on success, False on error)
+        If interactive=False: any (the evaluated result, or None for statements)
 
     Raises:
-        ValueError: If return_value=True and evaluation fails
+        ValueError: If interactive=False and an error occurs
     """
     if namespace is None:
         namespace = python_namespace
+
     try:
         # Try as expression first
         try:
             result = eval(code_line, namespace)
-            if return_value:
+
+            if not interactive:
                 return result
+
             if result is not None:
                 print(result)
+            return True
         except SyntaxError:
             # Not an expression, execute as statement
             exec(code_line, namespace)
+            return True if interactive else None
+
     except KeyboardInterrupt:
-        if return_value:
+        if not interactive:
             raise ValueError("Interrupted")
+
         print("\nKeyboardInterrupt", file=sys.stderr)
+        return False
+
     except SyntaxError as e:
-        if return_value:
+        if not interactive:
             raise ValueError(f"SyntaxError: {e.msg}")
+
         if e.text and e.offset:
             print(f"  {e.text.rstrip()}", file=sys.stderr)
             print(f"  {' ' * (e.offset - 1)}^", file=sys.stderr)
         print(f"SyntaxError: {e.msg}", file=sys.stderr)
+        return False
+
     except Exception as e:
-        if return_value:
+        if not interactive:
             raise ValueError(f"Error evaluating '{code_line}': {e}")
+
         traceback.print_exc()
+        return False
 
 
 def is_python_name(name):
@@ -94,8 +111,7 @@ def is_python_code(command):
     """
     Check if a command should be executed as Python code.
 
-    If all names in the expression exist
-    in the current Python context, it's Python. Otherwise, it's shell.
+    Uses syntax-based heuristics rather than name checking.
 
     Returns:
         (is_python, expansions) tuple
@@ -107,37 +123,71 @@ def is_python_code(command):
         # Must be valid Python syntax
         compile(parseable, '<string>', 'exec')
     except SyntaxError:
-        # Invalid syntax - check if first token is a Python name
+        # Compilation failed
         first = get_first_name(parseable)
-        if first and not is_builtin(first) and is_python_name(first):
+
+        # Python keyword? → Python (even with syntax error)
+        if first and keyword.iskeyword(first):
             return True, expansions
+
         return False, expansions
 
-    # Statement (not expression) - treat as Python
+    # Check if it's a statement (not an expression)
     try:
         compile(parseable, '<string>', 'eval')
     except SyntaxError:
+        # It's a statement (def, class, for, if, assignment, etc.) → Python
         return True, expansions
 
-    # Single identifier
+    # It's a valid expression - check if it looks like Python
     if parseable.isidentifier():
         if parseable == '__pynix_xp__':
             return True, expansions
-        if is_builtin(parseable):
-            return False, expansions
+        # If it exists in Python namespace, treat as Python
         return is_python_name(parseable), expansions
 
-    # Expression - check if all names exist in Python context
+    # Complex expression (operators, calls, subscripts, etc.)
+    # Parse the AST to check if it has Python-like features
     try:
         tree = ast.parse(parseable, mode='eval')
-    except SyntaxError:
+
+        # Strong Python indicators (definitely not shell commands)
+        has_strong_python_features = any(
+            isinstance(node, (ast.Call, ast.Subscript, ast.Attribute,
+                              ast.ListComp, ast.DictComp, ast.SetComp,
+                              ast.Lambda))
+            for node in ast.walk(tree)
+        )
+
+        if has_strong_python_features:
+            return True, expansions
+
+        # Has operators with literals (like "2 + 2", "'hello' + 'world'") → Python
+        has_operators = any(
+            isinstance(node, (ast.BinOp, ast.UnaryOp, ast.Compare))
+            for node in ast.walk(tree)
+        )
+
+        has_literals = any(
+            isinstance(node, (ast.Constant, ast.List,
+                              ast.Dict, ast.Set, ast.Tuple))
+            for node in ast.walk(tree)
+        )
+
+        # Pure literals (like "[1,2,3]", "{'a': 1}", "(1,2)") → Python
+        if has_literals:
+            return True, expansions
+
+        # Has operators but no literals - check if operand names exist in Python namespace
+        if has_operators:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name) and node.id != '__pynix_xp__':
+                    if is_python_name(node.id):
+                        # At least one name exists → treat as Python
+                        return True, expansions
+
+        # No Python features found
         return False, expansions
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            if node.id == '__pynix_xp__':
-                continue
-            if not is_python_name(node.id):
-                return False, expansions
-
-    return True, expansions
+    except SyntaxError:
+        return False, expansions
