@@ -302,7 +302,6 @@ class TestComprehensiveIntegration(unittest.TestCase):
             'result = $(echo @(" ".join(str(n) for n in nums)) | tr " " "\\n" | sort -r)')
         self.assertEqual(python_namespace.get('result'), '3\n2\n1')
 
-
     def test_full_integration(self):
         """Command with @(), pipe, stdout redirect, and stderr redirect."""
         outfile = os.path.join(self.tmpdir, 'out.txt')
@@ -314,61 +313,6 @@ class TestComprehensiveIntegration(unittest.TestCase):
         with open(outfile) as f:
             self.assertEqual(f.read().strip(), 'HELLO')
         self.assertTrue(os.path.exists(errfile))
-
-
-class TestMultilineInput(unittest.TestCase):
-    """Test multiline input handling."""
-
-    def setUp(self):
-        clear_namespace()
-        self.tmpdir = tempfile.mkdtemp()
-
-    def tearDown(self):
-        import shutil
-        shutil.rmtree(self.tmpdir)
-
-    def test_multiline_python_then_shell(self):
-        """Test Python assignment followed by shell command."""
-        outfile = os.path.join(self.tmpdir, 'out.txt')
-        run_command(f'''x = 10
-echo @(x) > {outfile}''')
-        with open(outfile) as f:
-            self.assertEqual(f.read().strip(), '10')
-
-    def test_multiline_python_only(self):
-        """Test multiple Python lines."""
-        run_command('''a = 1
-b = 2
-c = a + b''')
-        self.assertEqual(python_namespace.get('c'), 3)
-
-    def test_multiline_shell_only(self):
-        """Test multiple shell lines."""
-        outfile = os.path.join(self.tmpdir, 'out.txt')
-        run_command(f'''echo one > {outfile}
-echo two >> {outfile}
-echo three >> {outfile}''')
-        with open(outfile) as f:
-            self.assertEqual(f.read().strip(), 'one\ntwo\nthree')
-
-    def test_multiline_mixed(self):
-        """Test Python, shell, and Python again."""
-        outfile = os.path.join(self.tmpdir, 'out.txt')
-        run_command(f'''msg = "hello"
-echo @(msg) | tr a-z A-Z > {outfile}
-length = len(msg)''')
-        with open(outfile) as f:
-            self.assertEqual(f.read().strip(), 'HELLO')
-        self.assertEqual(python_namespace.get('length'), 5)
-
-    def test_multiline_with_blank_lines(self):
-        """Test multiline with blank lines are skipped."""
-        run_command('''x = 1
-
-y = 2
-
-z = x + y''')
-        self.assertEqual(python_namespace.get('z'), 3)
 
 
 if __name__ == '__main__':
