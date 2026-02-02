@@ -2,6 +2,74 @@ import os
 import shlex
 
 
+def parse_control_flow(command):
+    """
+    Split command by &&, ||, ; operators (respecting quotes).
+
+    Args:
+        command: Raw command string
+
+    Returns:
+        List of (operator, segment) tuples where operator is the operator
+        that comes BEFORE the segment (None for first segment):
+        [(None, "cmd1"), ("&&", "cmd2"), ("||", "cmd3")]
+
+    Example:
+        "ls && pwd || echo fail" →
+        [(None, "ls"), ("&&", "pwd"), ("||", "echo fail")]
+    """
+    segments = []
+    current_start = 0
+    current_op = None
+    i = 0
+    in_single_quote = False
+    in_double_quote = False
+
+    while i < len(command):
+        char = command[i]
+
+        # Handle escape sequences (only in double quotes)
+        if char == '\\' and in_double_quote and i + 1 < len(command):
+            i += 2
+            continue
+
+        # Track quote state
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+        elif char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+        # Look for operators outside quotes
+        elif not in_single_quote and not in_double_quote:
+            # Check for && or ||
+            if i < len(command) - 1:
+                two_char = command[i:i+2]
+                if two_char in ('&&', '||'):
+                    # Save previous segment
+                    segment = command[current_start:i].strip()
+                    if segment:
+                        segments.append((current_op, segment))
+                    current_op = two_char
+                    current_start = i + 2
+                    i += 2
+                    continue
+            # Check for ;
+            if char == ';':
+                segment = command[current_start:i].strip()
+                if segment:
+                    segments.append((current_op, segment))
+                current_op = ';'
+                current_start = i + 1
+
+        i += 1
+
+    # Final segment
+    segment = command[current_start:].strip()
+    if segment:
+        segments.append((current_op, segment))
+
+    return segments if segments else [(None, command)]
+
+
 def expand_path(path):
     """Expand ~ in path."""
     return os.path.expanduser(path)

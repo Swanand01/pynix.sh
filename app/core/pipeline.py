@@ -50,9 +50,12 @@ def execute_pipeline(pipeline):
 
     Example: echo hello | grep h | wc -l
         echo ---[pipe0]---> grep ---[pipe1]---> wc
+
+    Returns:
+        returncode of the last command in the pipeline
     """
     if not pipeline:
-        return
+        return 0
 
     # Reject cd and exit in pipelines (they need to affect parent shell)
     if len(pipeline) > 1:
@@ -60,7 +63,7 @@ def execute_pipeline(pipeline):
             cmd = segment['parts'][0] if segment['parts'] else None
             if cmd in (Command.CD, Command.EXIT):
                 print(f"{cmd}: cannot be used in pipeline", file=sys.stderr)
-                return
+                return 1
 
     n = len(pipeline)
     processes = []
@@ -194,3 +197,10 @@ def execute_pipeline(pipeline):
             f.close()
         except OSError:
             pass
+
+    # STEP 7: Return the exit code of the last command
+    if processes:
+        return processes[-1].returncode
+    elif threads:
+        return threads[-1][1]['returncode']  # result_holder
+    return 0

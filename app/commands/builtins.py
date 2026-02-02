@@ -41,18 +41,23 @@ def handle_echo(args, stdout=None):
 
 
 def handle_type(arg, stdout=None):
-    """Handle the type builtin command."""
+    """Handle the type builtin command.
+
+    Returns:
+        True if command found, False if not found
+    """
     stdout = stdout or sys.stdout
     if is_builtin(arg):
         print(f"{arg} is a shell builtin", file=stdout)
-        return
+        return True
 
     path = shutil.which(arg)
     if path is None:
         print(f"{arg}: not found", file=stdout)
-        return
+        return False
 
     print(f"{arg} is {path}", file=stdout)
+    return True
 
 
 def handle_pwd(stdout=None):
@@ -62,15 +67,20 @@ def handle_pwd(stdout=None):
 
 
 def handle_cd(arg, stderr=None):
-    """Handle the cd builtin command."""
+    """Handle the cd builtin command.
+
+    Returns:
+        True if successful, False if failed
+    """
     arg = expand_path(arg)
 
     if not os.path.isdir(arg):
         stderr = stderr or sys.stderr
         stderr.write(f"cd: {arg}: No such file or directory\n")
-        return
+        return False
 
     os.chdir(arg)
+    return True
 
 
 def handle_history(args=None, stdout=None, histfile=None):
@@ -121,24 +131,31 @@ def run_builtin(cmd, args, stdout=None, stderr=None):
         stderr: Optional stderr stream (defaults to sys.stderr)
 
     Returns:
-        True if command was 'exit', False otherwise
+        (should_exit, returncode) tuple
     """
     if cmd == Command.EXIT:
-        return True
+        return (True, 0)
     elif cmd == Command.ECHO:
         handle_echo(args, stdout=stdout)
+        return (False, 0)
     elif cmd == Command.TYPE:
         if args:
-            handle_type(args[0], stdout=stdout)
+            success = handle_type(args[0], stdout=stdout)
+            return (False, 0 if success else 1)
+        return (False, 0)
     elif cmd == Command.PWD:
         handle_pwd(stdout=stdout)
+        return (False, 0)
     elif cmd == Command.CD:
         if args:
-            handle_cd(args[0], stderr=stderr)
+            success = handle_cd(args[0], stderr=stderr)
+            return (False, 0 if success else 1)
+        return (False, 0)
     elif cmd == Command.HISTORY:
         handle_history(args, stdout=stdout)
+        return (False, 0)
 
-    return False
+    return (False, 0)
 
 
 def execute_builtin(segment=None, cmd=None, args=None,
@@ -173,15 +190,16 @@ def execute_builtin(segment=None, cmd=None, args=None,
         owns_files = True
 
     try:
-        should_exit = run_builtin(cmd, args, stdout=stdout, stderr=stderr)
+        should_exit, returncode = run_builtin(
+            cmd, args, stdout=stdout, stderr=stderr)
         if result_holder is not None:
-            result_holder['returncode'] = 0
-        return should_exit
+            result_holder['returncode'] = returncode
+        return (should_exit, returncode)
     except Exception as e:
         print(f"Builtin error: {e}", file=stderr or sys.stderr)
         if result_holder is not None:
             result_holder['returncode'] = 1
-        return False
+        return (False, 1)
     finally:
         if close_stdout and stdout and stdout not in (sys.stdout, sys.stderr):
             try:
