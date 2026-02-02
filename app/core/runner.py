@@ -54,8 +54,13 @@ def run_single_command(command):
 
         # Execute based on detected type
         if is_python:
-            success = execute_python(expanded)
-            last_returncode = 0 if success else 1
+            # If expanded to boolean literal, treat as exit code
+            if expanded.strip() in ('True', 'False'):
+                print(expanded.strip())
+                last_returncode = 0 if expanded.strip() == 'True' else 1
+            else:
+                success = execute_python(expanded)
+                last_returncode = 0 if success else 1
         else:
             should_exit, returncode = execute_shell(expanded)
             last_returncode = returncode
