@@ -20,8 +20,8 @@ def execute_shell(command, capture=False):
     """
     pipeline = parse_pipeline(command)
 
+    # Capture mode - return output
     if capture:
-        # Capture mode - return output
         if len(pipeline) == 1:
             result = execute_external(pipeline[0], capture=True)
             if result is None:
@@ -38,9 +38,11 @@ def execute_shell(command, capture=False):
     segment = pipeline[0]
     cmd = segment['parts'][0] if segment['parts'] else None
 
+    # Single command - check if builtin
     if is_builtin(cmd):
         return execute_builtin(segment)
 
+    # Single command - external
     returncode = execute_external(segment)
     if returncode is None:
         print(f"{cmd}: command not found", file=sys.stderr)
@@ -71,7 +73,8 @@ def execute_external(segment, capture=False):
             result = subprocess.run(
                 [cmd] + args,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=300
             )
             return (result.returncode, result.stdout, result.stderr)
         except FileNotFoundError:
@@ -80,8 +83,23 @@ def execute_external(segment, capture=False):
             return (130, '', '')
 
     # Open file handles for redirects
-    stdout_arg = open(stdout_spec[0], stdout_spec[1]) if stdout_spec else None
-    stderr_arg = open(stderr_spec[0], stderr_spec[1]) if stderr_spec else None
+    stdout_arg = None
+    stderr_arg = None
+
+    # Open file handles for redirects
+    try:
+        if stdout_spec:
+            stdout_arg = open(stdout_spec[0], stdout_spec[1])
+        if stderr_spec:
+            stderr_arg = open(stderr_spec[0], stderr_spec[1])
+    except (FileNotFoundError, PermissionError, OSError) as e:
+        print(f"Redirect error: {e}", file=sys.stderr)
+
+        if stdout_arg:
+            stdout_arg.close()
+        if stderr_arg:
+            stderr_arg.close()
+        return 1
 
     # Run the command
     try:
@@ -92,6 +110,9 @@ def execute_external(segment, capture=False):
         return None
     except PermissionError:
         print(f"{cmd}: Permission denied", file=sys.stderr)
+        return 126
+    except OSError as e:
+        print(f"{cmd}: {e}", file=sys.stderr)
         return 126
     except KeyboardInterrupt:
         return 130
