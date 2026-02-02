@@ -14,6 +14,20 @@ def run_command(command):
     Returns:
         True if shell should exit, False otherwise
     """
+    # Handle multiline input by running each line separately
+    if '\n' in command:
+        for line in command.split('\n'):
+            line = line.strip()
+            if line:
+                if run_single_command(line):
+                    return True
+        return False
+
+    return run_single_command(command)
+
+
+def run_single_command(command):
+    """Execute a single command line."""
     # Detect if this is Python code (also finds expansions)
     is_python, expansions = is_python_code(command)
     context = 'python' if is_python else 'shell'
