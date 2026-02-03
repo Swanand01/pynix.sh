@@ -6,6 +6,33 @@ from ..types import is_builtin
 from ..commands import execute_builtin
 
 
+def execute_shell_captured(pipeline, command):
+    """Execute shell command in capture mode, returning output."""
+    if len(pipeline) == 1:
+        result = execute_external(pipeline[0], capture=True)
+        if result is None:
+            return 127, '', f"{command}: command not found\n"
+        return result
+    return execute_pipeline_captured(pipeline)
+
+
+def execute_single_command(segment):
+    """Execute a single shell command (builtin or external)."""
+    cmd = segment['parts'][0] if segment['parts'] else None
+
+    # Check if builtin
+    if is_builtin(cmd):
+        return execute_builtin(segment)
+
+    # Execute external command
+    returncode = execute_external(segment)
+    if returncode is None:
+        print(f"{cmd}: command not found", file=sys.stderr)
+        return (False, 127)
+
+    return (False, returncode)
+
+
 def execute_shell(command, capture=False):
     """
     Execute a shell command (pipeline, builtin, or external).
@@ -22,33 +49,72 @@ def execute_shell(command, capture=False):
 
     # Capture mode - return output
     if capture:
-        if len(pipeline) == 1:
-            result = execute_external(pipeline[0], capture=True)
-            if result is None:
-                return 127, '', f"{command}: command not found\n"
-            return result
-        else:
-            return execute_pipeline_captured(pipeline)
+        return execute_shell_captured(pipeline, command)
 
-    # Interactive mode - display output
+    # Interactive mode - pipeline
     if len(pipeline) > 1:
         returncode = execute_pipeline(pipeline)
         return (False, returncode)
 
-    segment = pipeline[0]
-    cmd = segment['parts'][0] if segment['parts'] else None
+    # Interactive mode - single command
+    return execute_single_command(pipeline[0])
 
-    # Single command - check if builtin
-    if is_builtin(cmd):
-        return execute_builtin(segment)
 
-    # Single command - external
-    returncode = execute_external(segment)
-    if returncode is None:
-        print(f"{cmd}: command not found", file=sys.stderr)
-        return (False, 127)
+def execute_external_captured(cmd, args):
+    """Execute external command in capture mode, returning output."""
+    try:
+        result = subprocess.run(
+            [cmd] + args,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        return (result.returncode, result.stdout, result.stderr)
+    except FileNotFoundError:
+        return None
+    except KeyboardInterrupt:
+        return (130, '', '')
 
-    return (False, returncode)
+
+def open_redirect_files(stdout_spec, stderr_spec):
+    """Open file handles for stdout/stderr redirects."""
+    stdout_arg = None
+    stderr_arg = None
+
+    try:
+        if stdout_spec:
+            stdout_arg = open(stdout_spec[0], stdout_spec[1])
+        if stderr_spec:
+            stderr_arg = open(stderr_spec[0], stderr_spec[1])
+        return (stdout_arg, stderr_arg, None)
+    except (FileNotFoundError, PermissionError, OSError) as e:
+        # Clean up any opened handles on error
+        if stdout_arg:
+            stdout_arg.close()
+        if stderr_arg:
+            stderr_arg.close()
+        return (None, None, e)
+
+
+def run_subprocess_with_redirects(cmd, args, stdout_arg, stderr_arg):
+    """Run subprocess with redirect file handles."""
+    try:
+        result = subprocess.run(
+            [cmd] + args,
+            stdout=stdout_arg,
+            stderr=stderr_arg
+        )
+        return result.returncode
+    except FileNotFoundError:
+        return None
+    except PermissionError:
+        print(f"{cmd}: Permission denied", file=sys.stderr)
+        return 126
+    except OSError as e:
+        print(f"{cmd}: {e}", file=sys.stderr)
+        return 126
+    except KeyboardInterrupt:
+        return 130
 
 
 def execute_external(segment, capture=False):
@@ -63,61 +129,25 @@ def execute_external(segment, capture=False):
         If capture=False: returncode (int) or None if command not found
         If capture=True: (returncode, stdout, stderr) tuple or None if not found
     """
-
     # Parse segment and prepare redirects (includes ~ expansion)
     cmd, args, stdout_spec, stderr_spec = parse_segment(segment)
 
-    # If capturing, ignore redirects and use PIPE
+    # Capture mode - ignore redirects and use PIPE
     if capture:
-        try:
-            result = subprocess.run(
-                [cmd] + args,
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-            return (result.returncode, result.stdout, result.stderr)
-        except FileNotFoundError:
-            return None
-        except KeyboardInterrupt:
-            return (130, '', '')
+        return execute_external_captured(cmd, args)
 
     # Open file handles for redirects
-    stdout_arg = None
-    stderr_arg = None
-
-    # Open file handles for redirects
-    try:
-        if stdout_spec:
-            stdout_arg = open(stdout_spec[0], stdout_spec[1])
-        if stderr_spec:
-            stderr_arg = open(stderr_spec[0], stderr_spec[1])
-    except (FileNotFoundError, PermissionError, OSError) as e:
-        print(f"Redirect error: {e}", file=sys.stderr)
-
-        if stdout_arg:
-            stdout_arg.close()
-        if stderr_arg:
-            stderr_arg.close()
+    stdout_arg, stderr_arg, error = open_redirect_files(
+        stdout_spec, stderr_spec)
+    if error:
+        print(f"Redirect error: {error}", file=sys.stderr)
         return 1
 
-    # Run the command
+    # Run the command with redirects
     try:
-        result = subprocess.run(
-            [cmd] + args, stdout=stdout_arg, stderr=stderr_arg)
-        return result.returncode
-    except FileNotFoundError:
-        return None
-    except PermissionError:
-        print(f"{cmd}: Permission denied", file=sys.stderr)
-        return 126
-    except OSError as e:
-        print(f"{cmd}: {e}", file=sys.stderr)
-        return 126
-    except KeyboardInterrupt:
-        return 130
+        return run_subprocess_with_redirects(cmd, args, stdout_arg, stderr_arg)
     finally:
-        # Close file handles
+        # Always close file handles
         if stdout_arg:
             stdout_arg.close()
         if stderr_arg:

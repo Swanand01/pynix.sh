@@ -6,70 +6,102 @@ from ..parsing import parse_control_flow
 
 
 def run_command(command):
-    """
-    Detect, expand, and execute a command.
-
-    Args:
-        command: Raw command string from user input
-
-    Returns:
-        True if shell should exit, False otherwise
-    """
-    return run_single_command(command)
-
-
-def run_single_command(command):
     """Execute a single command line."""
-    # Parse control flow FIRST (before expansion)
     segments = parse_control_flow(command)
     namespace = get_namespace()
-
-    # Execute segments sequentially with short-circuit logic
+    cleanup_keys = set()
     last_returncode = 0
-    cleanup_keys = set()  # Track temp variables to clean up
 
     for operator, cmd_segment in segments:
-        # Short-circuit evaluation
-        if operator == "&&" and last_returncode != 0:
-            continue  # Skip: previous command failed
-        if operator == "||" and last_returncode == 0:
-            continue  # Skip: previous command succeeded
-        # operator == ";" or None → always execute
+        should_exit = execute_segment(
+            operator,
+            cmd_segment,
+            namespace,
+            last_returncode,
+            cleanup_keys
+        )
 
-        # Detect if this segment is Python code (also finds expansions)
-        is_python, expansions = is_python_code(cmd_segment)
-        context = 'python' if is_python else 'shell'
+        if should_exit is True:
+            return True
 
-        # Expand all operators ($, !, @) for THIS segment
-        try:
-            expanded = expand(cmd_segment, namespace,
-                              context=context, expansions=expansions)
-            # Track any new substitution variables created
-            cleanup_keys.update(
-                k for k in namespace if k.startswith('__pynix_sub_'))
-        except ValueError as e:
-            print(f"Expansion error: {e}", file=sys.stderr)
-            last_returncode = 1
-            continue
+        if should_exit is not None:
+            last_returncode = should_exit
 
-        # Execute based on detected type
-        if is_python:
-            # If expanded to boolean literal, treat as exit code
-            if expanded.strip() in ('True', 'False'):
-                print(expanded.strip())
-                last_returncode = 0 if expanded.strip() == 'True' else 1
-            else:
-                success = execute_python(expanded)
-                last_returncode = 0 if success else 1
-        else:
-            should_exit, returncode = execute_shell(expanded)
-            last_returncode = returncode
-            if should_exit:
-                return True
+    cleanup_substitutions(namespace, cleanup_keys)
+    return False
 
-    # Clean up all substitution variables collected during execution
+
+def should_skip_segment(operator, last_returncode):
+    """Check if segment should be skipped based on operator and previous return code."""
+    if operator == "&&" and last_returncode != 0:
+        return True
+    if operator == "||" and last_returncode == 0:
+        return True
+    return False
+
+
+def expand_segment(cmd_segment, namespace, context, expansions, cleanup_keys):
+    """Expand substitutions in a command segment."""
+    try:
+        expanded = expand(cmd_segment, namespace,
+                          context=context, expansions=expansions)
+        cleanup_keys.update(
+            k for k in namespace if k.startswith('__pynix_sub_'))
+        return expanded
+    except ValueError as e:
+        print(f"Expansion error: {e}", file=sys.stderr)
+        return None
+
+
+def execute_python_segment(expanded):
+    """Execute a Python code segment and return the exit code."""
+    # Handle boolean literals specially
+    if expanded.strip() in ('True', 'False'):
+        print(expanded.strip())
+        return 0 if expanded.strip() == 'True' else 1
+
+    success = execute_python(expanded)
+    return 0 if success else 1
+
+
+def execute_shell_segment(expanded):
+    """Execute a shell command segment. Returns True if should exit, or returncode."""
+    should_exit, returncode = execute_shell(expanded)
+    return True if should_exit else returncode
+
+
+def execute_segment(operator, cmd_segment, namespace, last_returncode, cleanup_keys):
+    """
+    Execute a single command segment.
+
+    Returns:
+        - True: shell should exit
+        - int: return code to update last_returncode
+        - None: segment was skipped
+    """
+    # Short-circuit evaluation
+    if should_skip_segment(operator, last_returncode):
+        return None
+
+    # Detect if Python code and find expansions
+    is_python, expansions = is_python_code(cmd_segment)
+    context = 'python' if is_python else 'shell'
+
+    # Expand substitutions
+    expanded = expand_segment(cmd_segment, namespace,
+                              context, expansions, cleanup_keys)
+    if expanded is None:
+        return 1
+
+    # Execute based on type
+    if is_python:
+        return execute_python_segment(expanded)
+    else:
+        return execute_shell_segment(expanded)
+
+
+def cleanup_substitutions(namespace, cleanup_keys):
+    """Remove temporary substitution variables from namespace."""
     for key in cleanup_keys:
         if key in namespace:
             del namespace[key]
-
-    return False

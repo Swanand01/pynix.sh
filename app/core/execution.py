@@ -119,75 +119,102 @@ def is_python_code(command):
     command = command.strip()
     parseable, expansions = replace_expansions_with_placeholder(command)
 
-    try:
-        # Must be valid Python syntax
-        compile(parseable, '<string>', 'exec')
-    except SyntaxError:
-        # Compilation failed
+    # Check if valid Python syntax
+    if not is_valid_python_syntax(parseable):
+        # Invalid syntax - check if starts with Python keyword
         first = get_first_name(parseable)
+        is_python = first and keyword.iskeyword(first)
+        return is_python, expansions
 
-        # Python keyword? → Python (even with syntax error)
-        if first and keyword.iskeyword(first):
-            return True, expansions
-
-        return False, expansions
-
-    # Check if it's a statement (not an expression)
-    try:
-        compile(parseable, '<string>', 'eval')
-    except SyntaxError:
-        # It's a statement (def, class, for, if, assignment, etc.) → Python
+    # Valid Python - check if statement or expression
+    if is_python_statement(parseable):
         return True, expansions
 
-    # It's a valid expression - check if it looks like Python
-    if parseable.isidentifier():
-        if parseable == '__pynix_xp__':
-            return True, expansions
-        # If it exists in Python namespace, treat as Python
-        return is_python_name(parseable), expansions
+    # It's an expression - determine if Python or shell
+    is_python = is_python_expression(parseable)
+    return is_python, expansions
 
-    # Complex expression (operators, calls, subscripts, etc.)
-    # Parse the AST to check if it has Python-like features
+
+def is_valid_python_syntax(code):
+    """Check if code compiles as valid Python."""
     try:
-        tree = ast.parse(parseable, mode='eval')
-
-        # Strong Python indicators (definitely not shell commands)
-        has_strong_python_features = any(
-            isinstance(node, (ast.Call, ast.Subscript, ast.Attribute,
-                              ast.ListComp, ast.DictComp, ast.SetComp,
-                              ast.Lambda))
-            for node in ast.walk(tree)
-        )
-
-        if has_strong_python_features:
-            return True, expansions
-
-        # Has operators with literals (like "2 + 2", "'hello' + 'world'") → Python
-        has_operators = any(
-            isinstance(node, (ast.BinOp, ast.UnaryOp, ast.Compare))
-            for node in ast.walk(tree)
-        )
-
-        has_literals = any(
-            isinstance(node, (ast.Constant, ast.List,
-                              ast.Dict, ast.Set, ast.Tuple))
-            for node in ast.walk(tree)
-        )
-
-        # Pure literals (like "[1,2,3]", "{'a': 1}", "(1,2)") → Python
-        if has_literals:
-            return True, expansions
-
-        # Has operators but no literals - check if operand names exist in Python namespace
-        if has_operators:
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Name) and node.id != '__pynix_xp__':
-                    if is_python_name(node.id):
-                        # At least one name exists → treat as Python
-                        return True, expansions
-
-        # No Python features found
-        return False, expansions
-
+        compile(code, '<string>', 'exec')
+        return True
     except SyntaxError:
-        return False, expansions
+        return False
+
+
+def is_python_statement(code):
+    """Check if code is a Python statement (not an expression)."""
+    try:
+        compile(code, '<string>', 'eval')
+        return False  # It's an expression
+    except SyntaxError:
+        return True  # It's a statement
+
+
+def is_python_expression(code):
+    """Determine if a valid expression should be treated as Python."""
+    if code.isidentifier():
+        return is_python_identifier(code)
+
+    # Complex expression - analyze AST
+    return analyze_expression_ast(code)
+
+
+def is_python_identifier(identifier):
+    """Check if a single identifier should be treated as Python."""
+    if identifier == '__pynix_xp__':
+        return True
+    return is_python_name(identifier)
+
+
+def analyze_expression_ast(code):
+    """Analyze expression AST to determine if it's Python or shell."""
+    try:
+        tree = ast.parse(code, mode='eval')
+    except SyntaxError:
+        return False
+
+    if has_strong_python_features(tree):
+        return True
+
+    if has_literals(tree):
+        return True
+
+    if has_operators_with_python_names(tree):
+        return True
+
+    return False
+
+
+def has_strong_python_features(tree):
+    """Check for AST nodes that strongly indicate Python code."""
+    python_nodes = (ast.Call, ast.Subscript, ast.Attribute,
+                    ast.ListComp, ast.DictComp, ast.SetComp, ast.Lambda)
+
+    return any(isinstance(node, python_nodes) for node in ast.walk(tree))
+
+
+def has_literals(tree):
+    """Check if AST contains literal values."""
+    literal_nodes = (ast.Constant, ast.List, ast.Dict, ast.Set, ast.Tuple)
+    return any(isinstance(node, literal_nodes) for node in ast.walk(tree))
+
+
+def has_operators_with_python_names(tree):
+    """Check if expression has operators and operands exist in Python namespace."""
+    operator_nodes = (ast.BinOp, ast.UnaryOp, ast.Compare)
+    has_operators = any(isinstance(node, operator_nodes)
+                        for node in ast.walk(tree))
+
+    if not has_operators:
+        return False
+
+    # Check if any name operands exist in namespace
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id != '__pynix_xp__':
+            if is_python_name(node.id):
+                return True
+
+    return False

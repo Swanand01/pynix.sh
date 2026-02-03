@@ -124,44 +124,65 @@ def expand(code, namespace, context='python', expansions=None):
 
     # Process each expansion (right to left to preserve indices)
     for i, (start, end, operator, content) in enumerate(expansions):
-        # Recursively expand the content first (handles nesting)
-        expanded_content = expand(content, namespace,
-                                  context='python' if operator == '@' else 'shell')
+        expanded_content = expand_content(content, operator, namespace)
 
         if operator == '@':
-            # Python expression - evaluate and stringify
-            try:
-                result = execute_python(
-                    expanded_content, namespace=namespace, interactive=False)
-                result = stringify(result)
-            except Exception as e:
-                raise ValueError(f"Error evaluating @({content}): {e}")
-
-            # Direct substitution for shell context
-            code = code[:start] + result + code[end:]
-
-        elif operator in ('$', '!'):
-            # Shell command - execute and capture result
-            returncode, stdout, stderr = execute_shell(
-                expanded_content, capture=True)
-
-            if context == 'shell':
-                # Split by newlines and quote each line for safe shell interpolation
-                result = stdout.rstrip('\n')
-                if result:
-                    lines = result.split('\n')
-                    result = ' '.join(shlex.quote(line) for line in lines)
-                else:
-                    result = ''
-                code = code[:start] + result + code[end:]
-            else:
-                # Python context - store in namespace
-                if operator == '$':
-                    result = stdout.rstrip('\n')
-                else:  # operator == '!'
-                    result = CommandResult(returncode, stdout, stderr)
-                var_name = f'__pynix_sub_{i}'
-                namespace[var_name] = result
-                code = code[:start] + var_name + code[end:]
+            code = handle_at_operator(
+                code, start, end, content, expanded_content, namespace)
+        else:
+            code = handle_shell_operator(
+                code, start, end, operator, expanded_content, namespace, context, i)
 
     return code
+
+
+def expand_content(content, operator, namespace):
+    """Recursively expand nested substitutions in content."""
+    context = 'python' if operator == '@' else 'shell'
+    return expand(content, namespace, context=context)
+
+
+def handle_at_operator(code, start, end, content, expanded_content, namespace):
+    """Handle @() Python expression interpolation."""
+    try:
+        result = execute_python(
+            expanded_content, namespace=namespace, interactive=False)
+        result = stringify(result)
+    except Exception as e:
+        raise ValueError(f"Error evaluating @({content}): {e}")
+
+    return code[:start] + result + code[end:]
+
+
+def handle_shell_operator(code, start, end, operator, expanded_content, namespace, context, index):
+    """Handle $() and !() shell command substitution."""
+    returncode, stdout, stderr = execute_shell(expanded_content, capture=True)
+
+    if context == 'shell':
+        return substitute_in_shell_context(code, start, end, stdout)
+    else:
+        return substitute_in_python_context(code, start, end, operator,
+                                            returncode, stdout, stderr, namespace, index)
+
+
+def substitute_in_shell_context(code, start, end, stdout):
+    """Substitute shell output into shell command (with proper quoting)."""
+    result = stdout.rstrip('\n')
+    if result:
+        lines = result.split('\n')
+        result = ' '.join(shlex.quote(line) for line in lines)
+    else:
+        result = ''
+    return code[:start] + result + code[end:]
+
+
+def substitute_in_python_context(code, start, end, operator, returncode, stdout, stderr, namespace, index):
+    """Substitute shell output into Python code (store in namespace variable)."""
+    if operator == '$':
+        result = stdout.rstrip('\n')
+    else:
+        result = CommandResult(returncode, stdout, stderr)
+
+    var_name = f'__pynix_sub_{index}'
+    namespace[var_name] = result
+    return code[:start] + var_name + code[end:]

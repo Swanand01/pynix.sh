@@ -2,6 +2,31 @@ import os
 import shlex
 
 
+def update_quote_state(char, in_single_quote, in_double_quote):
+    """Update quote tracking state based on current character."""
+    if char == "'" and not in_double_quote:
+        return not in_single_quote, in_double_quote
+    if char == '"' and not in_single_quote:
+        return in_single_quote, not in_double_quote
+    return in_single_quote, in_double_quote
+
+
+def check_two_char_operator(command, i):
+    """Check if current position is a two-character operator (&& or ||)."""
+    if i < len(command) - 1:
+        two_char = command[i:i+2]
+        if two_char in ('&&', '||'):
+            return two_char
+    return None
+
+
+def add_segment(segments, current_op, command, start, end):
+    """Add a segment to the segments list if non-empty."""
+    segment = command[start:end].strip()
+    if segment:
+        segments.append((current_op, segment))
+
+
 def parse_control_flow(command):
     """
     Split command by &&, ||, ; operators (respecting quotes).
@@ -21,9 +46,9 @@ def parse_control_flow(command):
     segments = []
     current_start = 0
     current_op = None
-    i = 0
     in_single_quote = False
     in_double_quote = False
+    i = 0
 
     while i < len(command):
         char = command[i]
@@ -33,39 +58,32 @@ def parse_control_flow(command):
             i += 2
             continue
 
-        # Track quote state
-        if char == "'" and not in_double_quote:
-            in_single_quote = not in_single_quote
-        elif char == '"' and not in_single_quote:
-            in_double_quote = not in_double_quote
+        # Update quote state
+        in_single_quote, in_double_quote = update_quote_state(
+            char, in_single_quote, in_double_quote
+        )
+
         # Look for operators outside quotes
-        elif not in_single_quote and not in_double_quote:
+        if not in_single_quote and not in_double_quote:
             # Check for && or ||
-            if i < len(command) - 1:
-                two_char = command[i:i+2]
-                if two_char in ('&&', '||'):
-                    # Save previous segment
-                    segment = command[current_start:i].strip()
-                    if segment:
-                        segments.append((current_op, segment))
-                    current_op = two_char
-                    current_start = i + 2
-                    i += 2
-                    continue
+            two_char_op = check_two_char_operator(command, i)
+            if two_char_op:
+                add_segment(segments, current_op, command, current_start, i)
+                current_op = two_char_op
+                current_start = i + 2
+                i += 2
+                continue
+
             # Check for ;
             if char == ';':
-                segment = command[current_start:i].strip()
-                if segment:
-                    segments.append((current_op, segment))
+                add_segment(segments, current_op, command, current_start, i)
                 current_op = ';'
                 current_start = i + 1
 
         i += 1
 
-    # Final segment
-    segment = command[current_start:].strip()
-    if segment:
-        segments.append((current_op, segment))
+    # Add final segment
+    add_segment(segments, current_op, command, current_start, len(command))
 
     return segments if segments else [(None, command)]
 
@@ -73,6 +91,46 @@ def parse_control_flow(command):
 def expand_path(path):
     """Expand ~ in path."""
     return os.path.expanduser(path)
+
+
+def tokenize_command(command):
+    """Tokenize command string, falling back to simple split on error."""
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return command.split()
+
+
+def split_on_pipes(tokens):
+    """Split tokens on pipe operators into separate command segments."""
+    segments = []
+    current = []
+
+    for token in tokens:
+        if token == '|':
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(token)
+
+    if current:
+        segments.append(current)
+
+    return segments
+
+
+def build_pipeline_segments(token_segments):
+    """Build pipeline segment dicts with redirections parsed."""
+    pipeline = []
+    for parts in token_segments:
+        parts, stdout_redirs, stderr_redirs = parse_redirection(parts)
+        pipeline.append({
+            'parts': parts,
+            'stdout_redirs': stdout_redirs,
+            'stderr_redirs': stderr_redirs
+        })
+    return pipeline
 
 
 def parse_pipeline(command):
@@ -89,34 +147,28 @@ def parse_pipeline(command):
             {'parts': ['grep', 'py'], 'stdout_redirs': [('out.txt', 'w')], 'stderr_redirs': []}
         ]
     """
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        tokens = command.split()
+    tokens = tokenize_command(command)
+    token_segments = split_on_pipes(tokens)
+    return build_pipeline_segments(token_segments)
 
-    # Split on | tokens
-    segments = []
-    current = []
-    for token in tokens:
-        if token != '|':
-            current.append(token)
-            continue
-        if current:
-            segments.append(current)
-        current = []
-    if current:
-        segments.append(current)
 
-    pipeline = []
-    for parts in segments:
-        parts, stdout_redirs, stderr_redirs = parse_redirection(parts)
-        pipeline.append({
-            'parts': parts,
-            'stdout_redirs': stdout_redirs,
-            'stderr_redirs': stderr_redirs
-        })
+def is_redirect_operator(token):
+    """Check if token is a redirect operator."""
+    return token in ('>', '1>', '>>', '1>>', '2>', '2>>')
 
-    return pipeline
+
+def get_redirect_mode(operator):
+    """Get file mode ('a' for append, 'w' for write) from redirect operator."""
+    return 'a' if operator.endswith('>>') else 'w'
+
+
+def add_redirect(operator, filename, stdout_redirs, stderr_redirs):
+    """Add redirect to appropriate list based on operator type."""
+    mode = get_redirect_mode(operator)
+    if operator.startswith('2'):
+        stderr_redirs.append((filename, mode))
+    else:
+        stdout_redirs.append((filename, mode))
 
 
 def parse_redirection(parts):
@@ -133,22 +185,19 @@ def parse_redirection(parts):
     """
     stdout_redirs = []
     stderr_redirs = []
-
     cleaned = []
     i = 0
+
     while i < len(parts):
         tok = parts[i]
-        if tok in ('>', '1>', '>>', '1>>', '2>', '2>>'):
+
+        if is_redirect_operator(tok):
             # If there's no filename after the operator, drop operator
             if i + 1 >= len(parts):
                 break
 
             filename = parts[i + 1]
-            mode = 'a' if tok.endswith('>>') else 'w'
-            if tok.startswith('2'):
-                stderr_redirs.append((filename, mode))
-            else:
-                stdout_redirs.append((filename, mode))
+            add_redirect(tok, filename, stdout_redirs, stderr_redirs)
             i += 2
             continue
 
@@ -156,6 +205,23 @@ def parse_redirection(parts):
         i += 1
 
     return cleaned, stdout_redirs, stderr_redirs
+
+
+def prime_earlier_redirects(redirs):
+    """Create/truncate earlier redirect files for bash-like side effects."""
+    if not redirs:
+        return
+    for path, mode in redirs[:-1]:
+        with open(expand_path(path), mode):
+            pass
+
+
+def get_active_redirect_spec(redirs):
+    """Get the active (last) redirect spec, or None if no redirects."""
+    if not redirs:
+        return None
+    path, mode = redirs[-1]
+    return (expand_path(path), mode)
 
 
 def prepare_redirects(stdout_redirs, stderr_redirs):
@@ -170,20 +236,14 @@ def prepare_redirects(stdout_redirs, stderr_redirs):
         (stdout_spec, stderr_spec) - Active redirect specs or None
     """
     # Prime earlier redirect files (create/truncate side effects)
-    for redirs in (stdout_redirs, stderr_redirs):
-        if redirs:
-            for path, mode in redirs[:-1]:
-                with open(expand_path(path), mode):
-                    pass
+    prime_earlier_redirects(stdout_redirs)
+    prime_earlier_redirects(stderr_redirs)
 
-    # Get active (last) redirect spec
-    def get_spec(redirs):
-        if not redirs:
-            return None
-        path, mode = redirs[-1]
-        return (expand_path(path), mode)
+    # Get active (last) redirect specs
+    stdout_spec = get_active_redirect_spec(stdout_redirs)
+    stderr_spec = get_active_redirect_spec(stderr_redirs)
 
-    return get_spec(stdout_redirs), get_spec(stderr_redirs)
+    return stdout_spec, stderr_spec
 
 
 def parse_segment(segment):
