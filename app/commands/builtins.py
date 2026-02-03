@@ -31,6 +31,10 @@ command_docs = {
         "description": "Displays the command history",
         "usage": "history"
     },
+    Command.ABOUT: {
+        "description": "Display help information for builtins",
+        "usage": "about [builtin_name]"
+    },
 }
 
 
@@ -80,6 +84,35 @@ def handle_cd(arg, stderr=None):
         return False
 
     os.chdir(arg)
+    return True
+
+
+def handle_about(args=None, stdout=None):
+    """Handle the about builtin command."""
+    stdout = stdout or sys.stdout
+
+    if not args:
+        # Display all available builtins
+        print("Available builtins:", file=stdout)
+        for cmd in sorted(Command._value2member_map_.keys()):
+            doc = command_docs.get(Command(cmd), {})
+            desc = doc.get("description")
+            print(f"  {cmd:12s} - {desc}", file=stdout)
+        print("\nUse 'about <builtin>' for more information on a specific builtin.", file=stdout)
+        return True
+
+    # Display help for specific builtin
+    builtin_name = args[0]
+    if not is_builtin(builtin_name):
+        print(f"about: no help topics match '{builtin_name}'.", file=stdout)
+        return False
+
+    cmd = Command(builtin_name)
+    doc = command_docs.get(cmd, {})
+
+    print(f"{builtin_name}: {doc.get('description', 'No description available')}", file=stdout)
+    print(f"Usage: {doc.get('usage', builtin_name)}", file=stdout)
+
     return True
 
 
@@ -154,6 +187,9 @@ def run_builtin(cmd, args, stdout=None, stderr=None):
     elif cmd == Command.HISTORY:
         handle_history(args, stdout=stdout)
         return (False, 0)
+    elif cmd == Command.ABOUT:
+        success = handle_about(args, stdout=stdout)
+        return (False, 0 if success else 1)
 
     return (False, 0)
 
