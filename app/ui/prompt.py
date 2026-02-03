@@ -126,6 +126,17 @@ def create_key_bindings():
     return bindings
 
 
+def get_continuation_prompt(width, line_number, is_soft_wrap):
+    """Provide continuation prompt for multiline input.
+    """
+    if is_soft_wrap:
+        return ''
+
+    return FormattedText([
+        ('class:pygments.comment',  width * ' '),
+    ])
+
+
 def create_prompt_session(builtin_commands=None, histfile=None):
     """Create and configure a PromptSession for the shell."""
     style = style_from_pygments_cls(get_style_by_name('dracula'))
@@ -143,4 +154,5 @@ def create_prompt_session(builtin_commands=None, histfile=None):
         enable_history_search=True,
         auto_suggest=AutoSuggestFromHistory(),
         history=history,
+        prompt_continuation=get_continuation_prompt,
     )
