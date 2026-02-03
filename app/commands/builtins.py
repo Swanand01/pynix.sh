@@ -1,10 +1,14 @@
 import os
 import sys
 import shutil
+from pathlib import Path
 from ..types import Command, is_builtin
 from ..parsing import parse_segment, expand_path
 
 HISTFILE = os.path.expanduser('~/.pynix_history')
+
+# Storage for environment variables before venv activation
+_venv_oldvars = {}
 
 command_docs = {
     Command.EXIT: {
@@ -34,6 +38,14 @@ command_docs = {
     Command.ABOUT: {
         "description": "Display help information for builtins",
         "usage": "about [builtin_name]"
+    },
+    Command.ACTIVATE: {
+        "description": "Activate a Python virtual environment",
+        "usage": "activate [venv_path]"
+    },
+    Command.DEACTIVATE: {
+        "description": "Deactivate the current virtual environment",
+        "usage": "deactivate"
     },
 }
 
@@ -84,6 +96,50 @@ def handle_cd(arg, stderr=None):
         return False
 
     os.chdir(arg)
+    return True
+
+
+def handle_activate(args=None):
+    """Handle the activate builtin command."""
+    
+    venv_path = os.path.abspath(expand_path(args[0]) if args else '.venv')
+    bin_dir = os.path.join(venv_path, 'Scripts' if sys.platform == 'win32' else 'bin')
+    
+    if not os.path.isdir(bin_dir):
+        print(f"activate: '{venv_path}' is not a valid virtual environment")
+        return False
+    
+    # Deactivate current venv if active
+    if 'VIRTUAL_ENV' in os.environ:
+        handle_deactivate()
+    
+    # Save old PATH for deactivation
+    global _venv_oldvars
+    _venv_oldvars = {'PATH': os.environ['PATH']}
+    
+    # Activate: prepend bin to PATH and set VIRTUAL_ENV
+    os.environ['PATH'] = bin_dir + os.pathsep + os.environ['PATH']
+    os.environ['VIRTUAL_ENV'] = venv_path
+    os.environ.pop('PYTHONHOME', None)
+    
+    return True
+
+
+def handle_deactivate():
+    """Handle the deactivate builtin command."""
+    
+    if 'VIRTUAL_ENV' not in os.environ:
+        print("deactivate: no virtual environment is active")
+        return False
+
+    # Restore PATH
+    global _venv_oldvars
+    if _venv_oldvars:
+        os.environ.update(_venv_oldvars)
+        _venv_oldvars.clear()
+    
+    del os.environ['VIRTUAL_ENV']
+    
     return True
 
 
@@ -189,6 +245,12 @@ def run_builtin(cmd, args, stdout=None, stderr=None):
         return (False, 0)
     elif cmd == Command.ABOUT:
         success = handle_about(args, stdout=stdout)
+        return (False, 0 if success else 1)
+    elif cmd == Command.ACTIVATE:
+        success = handle_activate(args)
+        return (False, 0 if success else 1)
+    elif cmd == Command.DEACTIVATE:
+        success = handle_deactivate()
         return (False, 0 if success else 1)
 
     return (False, 0)

@@ -1,5 +1,29 @@
 [project]
 name = "pynix-shell"
 version = "0.1.0"
-requires-python = ">=3.14"
+description = "A Python-enhanced shell with seamless Python/shell integration"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = ["prompt-toolkit", "pygments"]
+authors = [
+    {name = "Swanand Mathekar"}
+]
+keywords = ["shell", "python", "repl", "terminal"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Shells",
+]
+
+[project.scripts]
+pynix = "app.main:main"
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -1,5 +1,6 @@
 import code
 import os
+import sys
 import socket
 from pathlib import Path
 from prompt_toolkit import PromptSession
@@ -18,6 +19,22 @@ from .completer import ShellCompleter
 
 # Cache for static prompt parts
 _prompt_cache = {}
+
+
+def get_venv_name():
+    """Detect active virtual environment name."""
+    venv_path = os.environ.get('VIRTUAL_ENV')
+    if venv_path:
+        return Path(venv_path).name
+
+    conda_env = os.environ.get('CONDA_DEFAULT_ENV')
+    if conda_env and conda_env != 'base':
+        return conda_env
+
+    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        return Path(sys.prefix).name
+
+    return None
 
 
 def is_python_code_complete(text):
@@ -54,13 +71,28 @@ def get_prompt():
     cwd = os.getcwd()
     prompt_dir = cwd.replace(home, "~") if cwd.startswith(home) else cwd
 
-    return FormattedText([
+    # Build prompt parts
+    prompt_parts = []
+
+    # Add venv name if active
+    venv = get_venv_name()
+    if venv:
+        prompt_parts.extend([
+            ('class:pygments.comment', '('),
+            ('class:pygments.name.decorator', venv),
+            ('class:pygments.comment', ') '),
+        ])
+
+    # Add user@host and directory
+    prompt_parts.extend([
         ('class:pygments.name.function', user),
         ('class:pygments.operator', '@'),
         ('class:pygments.name.class', f"{host} "),
         ('class:pygments.literal.string', prompt_dir),
         ('class:pygments.operator', ' > '),
     ])
+
+    return FormattedText(prompt_parts)
 
 
 def create_key_bindings():

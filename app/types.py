@@ -12,6 +12,8 @@ class Command(str, Enum):
     CD = 'cd'
     HISTORY = 'history'
     ABOUT = 'about'
+    ACTIVATE = 'activate'
+    DEACTIVATE = 'deactivate'
 
 
 def is_builtin(command):
