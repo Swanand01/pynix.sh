@@ -51,6 +51,16 @@ class TestExpansionsInShell(unittest.TestCase):
         run_command('x = 5; result = $(echo @(x)); print(result)')
         self.assertEqual(sys.stdout.getvalue().strip(), '5')
 
+    def test_multiple_same_expansion(self):
+        """Test same @() expansion appearing multiple times in one command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, 'snail')
+            run_command(f'name = "snail"; echo @(name) > {tmpdir}/@(name)')
+            # Verify file was created with correct name
+            self.assertTrue(os.path.exists(output_file))
+            with open(output_file) as f:
+                self.assertEqual(f.read().strip(), 'snail')
+
 
 class TestExpansionsInPython(unittest.TestCase):
     """Test shell expansions in Python code."""

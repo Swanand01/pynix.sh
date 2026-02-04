@@ -86,13 +86,13 @@ def expand_nested_substitutions(text, scope):
                         raise RuntimeError(
                             f"{operator}({content}): {error_msg}") from None
 
-                    # Replace
-                    start = i + offset
-                    end = close_paren + 1 + offset
+                    # Replace in result
+                    start = i
+                    end = close_paren + 1
                     result = result[:start] + replacement + result[end:]
-                    offset += len(replacement) - (close_paren + 1 - i)
 
-                    i = close_paren + 1
+                    # Continue searching from after the replacement
+                    i = start + len(replacement)
                     continue
         i += 1
 
