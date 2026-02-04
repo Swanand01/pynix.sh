@@ -13,8 +13,6 @@ from pygments.token import (
     Whitespace,
 )
 
-
-# Simple command pattern (like xonsh's COMMAND_TOKEN_RE)
 COMMAND_TOKEN_RE = r'[^=\s\[\]{}()$"\'`<&|;!]+(?=\s|$|\)|\]|\}|!)'
 
 
@@ -47,7 +45,7 @@ def subproc_arg_callback(_, match):
 class ShellLexer(Python3Lexer):
     """
     Custom lexer that extends Python3Lexer with shell syntax highlighting.
-    Based on xonsh's XonshLexer - dynamically highlights commands and paths.
+    Dynamically highlights commands and paths.
     """
 
     name = 'ShellLexer'

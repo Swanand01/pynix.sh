@@ -101,7 +101,7 @@ def create_key_bindings():
 
     @bindings.add(Keys.Enter)
     def _(event):
-        """Handle Enter with auto-indentation for Python code (xonsh-style)."""
+        """Handle Enter with auto-indentation for Python code."""
         buffer = event.current_buffer
         text = buffer.text
         current_line = buffer.document.current_line

@@ -58,7 +58,7 @@ def transform_code_with_expansions(code, mode='exec', namespace=None):
     Args:
         code: Source code to transform
         mode: Parse mode ('exec', 'eval', 'single')
-        namespace: Dict of available variables for shell detection (like xonsh)
+        namespace: Dict of available variables for shell detection
     """
     code = code.strip()
 
@@ -117,9 +117,6 @@ def looks_like_python_syntax(code):
 def is_likely_shell_command(tree, namespace=None):
     """
     Heuristic: detect if parsed Python is actually a shell command.
-
-    Like xonsh: check if names in the expression exist in the namespace.
-    If not, treat as shell command.
 
     Args:
         tree: Parsed AST
