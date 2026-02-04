@@ -3,9 +3,9 @@ import os
 import shlex
 import subprocess
 import threading
-from ..parsing import prepare_redirects, expand_path
-from ..types import Command, is_builtin
-from ..commands import execute_builtin
+from ...parsing import prepare_redirect_specs, expand_path
+from ...types import Command, is_builtin
+from ...commands import execute_builtin
 
 
 def build_shell_command(pipeline):
@@ -239,7 +239,7 @@ def execute_pipeline(pipeline):
         args = [expand_path(arg) for arg in cmd_parts[1:]]
 
         # Get file redirects (>, >>, 2>, 2>>)
-        stdout_spec, stderr_spec = prepare_redirects(
+        stdout_spec, stderr_spec = prepare_redirect_specs(
             segment['stdout_redirs'],
             segment['stderr_redirs']
         )

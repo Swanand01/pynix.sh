@@ -1,13 +1,14 @@
 import subprocess
 import sys
-from ..parsing import parse_pipeline, parse_segment
-from .pipeline import execute_pipeline, execute_pipeline_captured
-from ..types import is_builtin
-from ..commands import execute_builtin
+from ...parsing import parse_pipeline_into_segments, parse_segment
+from ...types import is_builtin
+from ...commands import execute_builtin
 
 
 def execute_shell_captured(pipeline, command):
     """Execute shell command in capture mode, returning output."""
+    from .pipeline import execute_pipeline_captured
+
     if len(pipeline) == 1:
         result = execute_external(pipeline[0], capture=True)
         if result is None:
@@ -45,7 +46,9 @@ def execute_shell(command, capture=False):
         If capture=False: (should_exit, returncode) tuple
         If capture=True: (returncode, stdout, stderr) tuple
     """
-    pipeline = parse_pipeline(command)
+    from .pipeline import execute_pipeline
+
+    pipeline = parse_pipeline_into_segments(command)
 
     # Capture mode - return output
     if capture:
@@ -76,8 +79,18 @@ def execute_external_captured(cmd, args):
         return (130, '', '')
 
 
-def open_redirect_files(stdout_spec, stderr_spec):
-    """Open file handles for stdout/stderr redirects."""
+def open_redirect_file_handles(stdout_spec, stderr_spec):
+    """
+    Open file handles for stdout/stderr redirect specs.
+
+    Args:
+        stdout_spec: Tuple like ('/path', 'w') or None
+        stderr_spec: Tuple like ('/path', 'w') or None
+
+    Returns:
+        (stdout_handle, stderr_handle, error) tuple
+        Handles are open file objects or None, error is exception or None
+    """
     stdout_arg = None
     stderr_arg = None
 
@@ -129,7 +142,9 @@ def execute_external(segment, capture=False):
         If capture=False: returncode (int) or None if command not found
         If capture=True: (returncode, stdout, stderr) tuple or None if not found
     """
-    # Parse segment and prepare redirects (includes ~ expansion)
+    from ...parsing import expand_path
+
+    # Parse segment and prepare redirects
     cmd, args, stdout_spec, stderr_spec = parse_segment(segment)
 
     # Capture mode - ignore redirects and use PIPE
@@ -137,7 +152,7 @@ def execute_external(segment, capture=False):
         return execute_external_captured(cmd, args)
 
     # Open file handles for redirects
-    stdout_arg, stderr_arg, error = open_redirect_files(
+    stdout_arg, stderr_arg, error = open_redirect_file_handles(
         stdout_spec, stderr_spec)
     if error:
         print(f"Redirect error: {error}", file=sys.stderr)
