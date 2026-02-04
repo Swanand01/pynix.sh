@@ -11,8 +11,8 @@ from io import StringIO
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-class TestExpansionsInShell(unittest.TestCase):
-    """Test Python expansions (@(), $(), !()) in shell commands."""
+class TestInterpolation(unittest.TestCase):
+    """Test Python expansions (@(), $(), !()) in shell and Python contexts."""
 
     def setUp(self):
         """Clear namespace and capture output."""
@@ -29,6 +29,8 @@ class TestExpansionsInShell(unittest.TestCase):
         """Restore stdout/stderr."""
         sys.stdout = self.held_stdout
         sys.stderr = self.held_stderr
+
+    # --- Expansions in shell ---
 
     def test_at_expansion_in_shell(self):
         """Test @() expansion in shell command."""
@@ -56,30 +58,11 @@ class TestExpansionsInShell(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_file = os.path.join(tmpdir, 'snail')
             run_command(f'name = "snail"; echo @(name) > {tmpdir}/@(name)')
-            # Verify file was created with correct name
             self.assertTrue(os.path.exists(output_file))
             with open(output_file) as f:
                 self.assertEqual(f.read().strip(), 'snail')
 
-
-class TestExpansionsInPython(unittest.TestCase):
-    """Test shell expansions in Python code."""
-
-    def setUp(self):
-        """Clear namespace and capture output."""
-        keys_to_remove = [k for k in python_namespace.keys()
-                          if not k.startswith('_') and k not in ('__name__', '__builtins__', 'CommandResult')]
-        for k in keys_to_remove:
-            del python_namespace[k]
-        self.held_stdout = sys.stdout
-        self.held_stderr = sys.stderr
-        sys.stdout = StringIO()
-        sys.stderr = StringIO()
-
-    def tearDown(self):
-        """Restore stdout/stderr."""
-        sys.stdout = self.held_stdout
-        sys.stderr = self.held_stderr
+    # --- Expansions in Python ---
 
     def test_dollar_in_assignment(self):
         """Test $() in Python assignment."""
@@ -101,13 +84,11 @@ class TestExpansionsInPython(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             run_command(
                 f'cd {tmpdir}; files = ["a.txt", "b.txt"]; for f in files: $(touch @(f))')
-            # Check files were created
             self.assertTrue(os.path.exists(os.path.join(tmpdir, 'a.txt')))
             self.assertTrue(os.path.exists(os.path.join(tmpdir, 'b.txt')))
 
     def test_expansion_in_conditional(self):
         """Test expansion in if statement."""
-        # Use proper multiline if syntax or inline expression
         run_command('x = 5')
         run_command('if x > 3: print("yes")')
         self.assertEqual(sys.stdout.getvalue().strip(), 'yes')

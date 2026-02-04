@@ -11,8 +11,8 @@ from io import StringIO
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-class TestComplexCombinations(unittest.TestCase):
-    """Test complex combinations of pipes, redirections, and mixed code."""
+class TestEdgeCases(unittest.TestCase):
+    """Test complex combinations and error handling."""
 
     def setUp(self):
         """Clear namespace and capture output."""
@@ -29,6 +29,8 @@ class TestComplexCombinations(unittest.TestCase):
         """Restore stdout/stderr."""
         sys.stdout = self.held_stdout
         sys.stderr = self.held_stderr
+
+    # --- Complex combinations ---
 
     def test_pipeline_with_redirection(self):
         """Test shell pipeline with output redirection."""
@@ -98,7 +100,6 @@ class TestComplexCombinations(unittest.TestCase):
         """Test for loop with pipeline and redirection (complex scenario)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_file = os.path.join(tmpdir, 'output.txt')
-            # Correct syntax: shell command inside !(), with @() for Python values
             run_command(f'files = ["a", "b", "c"]')
             run_command(
                 f'for f in files: $(echo @(f) | grep -v x >> {output_file})')
@@ -124,7 +125,6 @@ class TestComplexCombinations(unittest.TestCase):
         """Test complex nested: Python loop + expansions + pipeline + redirection."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_file = os.path.join(tmpdir, 'output.txt')
-            # Correct syntax: shell command with @() expansion in for loop
             run_command(f'items = ["cat", "dog", "bat"]')
             run_command(
                 f'for item in items: !(echo @(item) | grep at >> {output_file})')
@@ -134,40 +134,18 @@ class TestComplexCombinations(unittest.TestCase):
                 self.assertIn('bat', content)
                 self.assertNotIn('dog\n', content + '\n')
 
-
-class TestErrorHandling(unittest.TestCase):
-    """Test error handling and syntax detection."""
-
-    def setUp(self):
-        """Clear namespace and capture output."""
-        keys_to_remove = [k for k in python_namespace.keys()
-                          if not k.startswith('_') and k not in ('__name__', '__builtins__', 'CommandResult')]
-        for k in keys_to_remove:
-            del python_namespace[k]
-        self.held_stdout = sys.stdout
-        self.held_stderr = sys.stderr
-        sys.stdout = StringIO()
-        sys.stderr = StringIO()
-
-    def tearDown(self):
-        """Restore stdout/stderr."""
-        sys.stdout = self.held_stdout
-        sys.stderr = self.held_stderr
+    # --- Error handling ---
 
     def test_python_syntax_error_detected(self):
         """Test Python syntax error is shown, not treated as shell."""
-        # foo( has unmatched paren - should be Python error
         run_command('foo(')
         stderr = sys.stderr.getvalue()
-        # Should have a Python error, not "command not found"
         self.assertTrue(len(stderr) > 0)
 
     def test_undefined_variable_in_expansion(self):
         """Test undefined variable in @() raises error."""
-        # Errors in expansions are printed to stderr
         run_command('x = @(undefined_var)')
         stderr = sys.stderr.getvalue()
-        # Should have NameError about undefined_var
         self.assertTrue('undefined_var' in stderr or 'NameError' in stderr)
 
 
