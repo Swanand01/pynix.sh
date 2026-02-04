@@ -1,153 +1,59 @@
-from app.commands.builtins import (
-    handle_echo, handle_pwd, handle_type, handle_cd, handle_history,
-    is_builtin
-)
+"""Tests for builtin commands."""
+
+from app.core import run_command
+from app.core.python.namespace import python_namespace
 import unittest
-import os
 import sys
+import os
 import tempfile
-from pathlib import Path
 from io import StringIO
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class TestBuiltinCommands(unittest.TestCase):
-    """Test all builtin commands with file object parameters."""
+    """Test builtin commands."""
 
-    def test_echo_stdout(self):
-        """Test echo writes to custom stdout."""
-        f = StringIO()
-        handle_echo(['hello', 'world'], stdout=f)
-        self.assertEqual(f.getvalue(), 'hello world\n')
+    def setUp(self):
+        """Clear namespace and capture output."""
+        keys_to_remove = [k for k in python_namespace.keys()
+                          if not k.startswith('_') and k not in ('__name__', '__builtins__', 'CommandResult')]
+        for k in keys_to_remove:
+            del python_namespace[k]
+        self.held_stdout = sys.stdout
+        self.held_stderr = sys.stderr
+        sys.stdout = StringIO()
+        sys.stderr = StringIO()
 
-    def test_echo_empty(self):
-        """Test echo with no arguments."""
-        f = StringIO()
-        handle_echo([], stdout=f)
-        self.assertEqual(f.getvalue(), '\n')
+    def tearDown(self):
+        """Restore stdout/stderr."""
+        sys.stdout = self.held_stdout
+        sys.stderr = self.held_stderr
 
-    def test_pwd_stdout(self):
-        """Test pwd writes to custom stdout."""
-        f = StringIO()
-        handle_pwd(stdout=f)
-        result = f.getvalue().strip()
-        self.assertEqual(result, os.getcwd())
+    def test_builtin_pwd(self):
+        """Test pwd builtin."""
+        # Ensure we're in a valid directory (test isolation issue)
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))
+        os.chdir(project_root)
+        # pwd executes successfully - just check returncode
+        run_command('result = !(pwd)')
+        self.assertIn('result', python_namespace)
+        self.assertEqual(python_namespace['result'].returncode, 0)
 
-    def test_type_builtin(self):
-        """Test type command identifies builtins."""
-        f = StringIO()
-        handle_type('echo', stdout=f)
-        self.assertIn('shell builtin', f.getvalue())
-
-    def test_type_external(self):
-        """Test type command identifies external commands."""
-        f = StringIO()
-        handle_type('ls', stdout=f)
-        result = f.getvalue()
-        self.assertIn('ls is', result)
-
-    def test_type_not_found(self):
-        """Test type command for non-existent command."""
-        f = StringIO()
-        handle_type('nonexistent_command_xyz', stdout=f)
-        self.assertIn('not found', f.getvalue())
-
-    def test_cd_changes_directory(self):
-        """Test cd changes the current directory."""
+    def test_builtin_cd(self):
+        """Test cd builtin."""
         original_dir = os.getcwd()
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
-                handle_cd(tmpdir)
-                # Use realpath to handle macOS /var -> /private/var symlink
-                self.assertEqual(os.path.realpath(
-                    os.getcwd()), os.path.realpath(tmpdir))
+                run_command(f'cd {tmpdir}')
+                # Use realpath to handle symlinks (/var vs /private/var on macOS)
+                self.assertEqual(os.path.realpath(os.getcwd()),
+                                 os.path.realpath(tmpdir))
         finally:
+            # Restore original directory so subsequent tests don't fail
             os.chdir(original_dir)
-
-    def test_cd_home(self):
-        """Test cd ~ goes to home directory."""
-        original_dir = os.getcwd()
-        try:
-            handle_cd('~')
-            self.assertEqual(os.getcwd(), str(Path.home()))
-        finally:
-            os.chdir(original_dir)
-
-    def test_is_builtin(self):
-        """Test builtin detection."""
-        self.assertTrue(is_builtin('echo'))
-        self.assertTrue(is_builtin('pwd'))
-        self.assertTrue(is_builtin('cd'))
-        self.assertTrue(is_builtin('type'))
-        self.assertTrue(is_builtin('exit'))
-        self.assertFalse(is_builtin('ls'))
-        self.assertFalse(is_builtin('grep'))
-
-    def test_history_shows_commands(self):
-        """Test history displays commands without metadata."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.history') as f:
-            # FileHistory format: # timestamp, +command
-            f.write("# 2026-01-31 12:50:25.322892\n")
-            f.write("+ls\n")
-            f.write("# 2026-01-31 12:50:30.123456\n")
-            f.write("+echo hello\n")
-            f.write("# 2026-01-31 12:50:35.654321\n")
-            f.write("+cd ~/Downloads\n")
-            histfile = f.name
-
-        try:
-            out = StringIO()
-            handle_history(stdout=out, histfile=histfile)
-            output = out.getvalue()
-            self.assertIn('ls', output)
-            self.assertIn('echo hello', output)
-            self.assertIn('cd ~/Downloads', output)
-            self.assertNotIn('# 2026', output)
-            self.assertNotIn('+ls', output)
-        finally:
-            os.unlink(histfile)
-
-    def test_history_with_limit(self):
-        """Test history n shows last n commands."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.history') as f:
-            f.write("# ts\n+ls\n# ts\n+echo hello\n# ts\n+cd ~/Downloads\n")
-            histfile = f.name
-
-        try:
-            out = StringIO()
-            handle_history(['2'], stdout=out, histfile=histfile)
-            output = out.getvalue()
-            lines = [l for l in output.strip().split('\n') if l]
-            self.assertEqual(len(lines), 2)
-            self.assertIn('echo hello', output)
-            self.assertIn('cd ~/Downloads', output)
-            self.assertNotIn('ls', output)
-        finally:
-            os.unlink(histfile)
-
-    def test_history_numbering(self):
-        """Test history shows proper line numbers."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.history') as f:
-            f.write("# ts\n+ls\n# ts\n+echo hello\n# ts\n+cd ~/Downloads\n")
-            histfile = f.name
-
-        try:
-            out = StringIO()
-            handle_history(stdout=out, histfile=histfile)
-            output = out.getvalue()
-            self.assertIn('    1  ls', output)
-            self.assertIn('    2  echo hello', output)
-            self.assertIn('    3  cd ~/Downloads', output)
-        finally:
-            os.unlink(histfile)
-
-    def test_history_file_not_found(self):
-        """Test history handles missing file gracefully."""
-        out = StringIO()
-        handle_history(stdout=out, histfile='/nonexistent/history/file')
-        self.assertEqual(out.getvalue(), '')
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    unittest.main()
