@@ -1,8 +1,28 @@
 import subprocess
 import sys
 from ...parsing import parse_pipeline_into_segments, parse_segment
+from ...parsing.tokenizer import update_quote_state
 from ...types import is_builtin
 from ...commands import execute_builtin
+
+
+def split_on_unquoted_newlines(command):
+    """Split command on newlines that are outside quotes."""
+    lines = []
+    current = []
+    in_single = in_double = False
+
+    for char in command:
+        in_single, in_double = update_quote_state(char, in_single, in_double)
+        if char == '\n' and not in_single and not in_double:
+            lines.append(''.join(current))
+            current = []
+        else:
+            current.append(char)
+
+    if current:
+        lines.append(''.join(current))
+    return lines
 
 
 def execute_shell_captured(pipeline, command):
@@ -17,7 +37,7 @@ def execute_shell_captured(pipeline, command):
     return execute_pipeline_captured(pipeline)
 
 
-def execute_single_command(segment):
+def execute_single_shell_command(segment):
     """Execute a single shell command (builtin or external)."""
     cmd = segment['parts'][0] if segment['parts'] else None
 
@@ -60,7 +80,7 @@ def execute_shell(command, capture=False):
         return (False, returncode)
 
     # Interactive mode - single command
-    return execute_single_command(pipeline[0])
+    return execute_single_shell_command(pipeline[0])
 
 
 def execute_external_captured(cmd, args):
@@ -142,7 +162,6 @@ def execute_external(segment, capture=False):
         If capture=False: returncode (int) or None if command not found
         If capture=True: (returncode, stdout, stderr) tuple or None if not found
     """
-    from ...parsing import expand_path
 
     # Parse segment and prepare redirects
     cmd, args, stdout_spec, stderr_spec = parse_segment(segment)

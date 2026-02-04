@@ -99,6 +99,41 @@ def expand_nested_substitutions(text, scope):
     return result
 
 
+def execute_multiline_shell(lines, capture):
+    """Execute multiple shell lines, handling capture modes appropriately."""
+    import sys
+    from .execution import execute_shell
+    from ...types import CommandResult
+
+    if capture == 'stdout':
+        all_stdout = []
+        for line in lines:
+            _, stdout, _ = execute_shell(line, capture=True)
+            all_stdout.append(stdout.strip() if stdout else '')
+        return '\n'.join(all_stdout)
+
+    elif capture == 'full':
+        all_stdout, all_stderr = [], []
+        last_rc = 0
+        for line in lines:
+            last_rc, stdout, stderr = execute_shell(line, capture=True)
+            all_stdout.append(stdout if stdout else '')
+            all_stderr.append(stderr if stderr else '')
+        return CommandResult(last_rc, ''.join(all_stdout), ''.join(all_stderr))
+
+    else:  # capture is None - interactive mode
+        last_returncode = 0
+        for line in lines:
+            should_exit, returncode = execute_shell(line, capture=False)
+            last_returncode = returncode
+            if should_exit:
+                sys.exit(returncode)
+        # Store final returncode
+        caller_frame = sys._getframe(2)  # skip this func and shell()
+        caller_frame.f_globals['__last_returncode__'] = last_returncode
+        return None
+
+
 def shell(cmd_template, capture=None):
     """
     Unified shell execution - handles all shell command execution modes.
@@ -113,7 +148,7 @@ def shell(cmd_template, capture=None):
         None, str, or CommandResult depending on capture mode
     """
     import sys
-    from .execution import execute_shell
+    from .execution import execute_shell, split_on_unquoted_newlines
     from ...types import CommandResult
 
     # Get caller's scope for expanding patterns
@@ -121,6 +156,13 @@ def shell(cmd_template, capture=None):
 
     # Expand all patterns recursively
     cmd = expand_nested_substitutions(cmd_template, scope)
+
+    # Handle multiline commands - split and execute each line
+    if '\n' in cmd:
+        lines = split_on_unquoted_newlines(cmd)
+        lines = [ln.strip() for ln in lines if ln.strip()]
+        if len(lines) > 1:
+            return execute_multiline_shell(lines, capture)
 
     # Handle redirections (can't capture when output goes to file)
     if has_redirections(cmd):
