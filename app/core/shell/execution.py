@@ -1,9 +1,9 @@
 import subprocess
 import sys
-from ...parsing import parse_pipeline_into_segments, parse_segment
-from ...parsing.tokenizer import update_quote_state
+from ...parsing import parse_pipeline_into_segments, parse_segment, update_quote_state
 from ...types import is_builtin
 from ...commands import execute_builtin
+from .pipeline import execute_pipeline, execute_pipeline_captured
 
 
 def split_on_unquoted_newlines(command):
@@ -27,8 +27,6 @@ def split_on_unquoted_newlines(command):
 
 def execute_shell_captured(pipeline, command):
     """Execute shell command in capture mode, returning output."""
-    from .pipeline import execute_pipeline_captured
-
     if len(pipeline) == 1:
         result = execute_external(pipeline[0], capture=True)
         if result is None:
@@ -66,8 +64,6 @@ def execute_shell(command, capture=False):
         If capture=False: (should_exit, returncode) tuple
         If capture=True: (returncode, stdout, stderr) tuple
     """
-    from .pipeline import execute_pipeline
-
     pipeline = parse_pipeline_into_segments(command)
 
     # Capture mode - return output

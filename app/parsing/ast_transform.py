@@ -1,5 +1,6 @@
 import ast
 import builtins as builtin_module
+import keyword
 from .expansions import replace_expansions_with_placeholders, parse_expansion_content
 
 
@@ -88,8 +89,6 @@ def looks_like_python_syntax(code):
     Check if code looks like it was intended to be Python.
     Used to distinguish Python syntax errors from shell commands.
     """
-    import keyword
-
     # Get first word
     words = code.split()
     if not words:

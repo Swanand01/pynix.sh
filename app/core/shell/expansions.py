@@ -1,5 +1,10 @@
 import re
+import sys
 from ..utils import get_caller_scope
+from ..python import execute_python
+from .execution import execute_shell, split_on_unquoted_newlines
+from ...parsing import find_matching_paren
+from ...types import CommandResult
 
 
 def has_redirections(cmd):
@@ -44,10 +49,6 @@ def expand_nested_substitutions(text, scope):
     Returns:
         String with all patterns expanded
     """
-    from ...parsing import find_matching_paren
-    from ..python.execution import execute_python
-    from .execution import execute_shell
-
     result = text
     offset = 0
     i = 0
@@ -101,10 +102,6 @@ def expand_nested_substitutions(text, scope):
 
 def execute_multiline_shell(lines, capture):
     """Execute multiple shell lines, handling capture modes appropriately."""
-    import sys
-    from .execution import execute_shell
-    from ...types import CommandResult
-
     if capture == 'stdout':
         all_stdout = []
         for line in lines:
@@ -147,10 +144,6 @@ def shell(cmd_template, capture=None):
     Returns:
         None, str, or CommandResult depending on capture mode
     """
-    import sys
-    from .execution import execute_shell, split_on_unquoted_newlines
-    from ...types import CommandResult
-
     # Get caller's scope for expanding patterns
     scope = get_caller_scope()
 
