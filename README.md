@@ -84,7 +84,7 @@ If you like pynix, ⭐ the repo!
 **Installation:**
 
 ```bash
-pip install pynix
+pip install pynix.sh
 ```
 
 **Launch:**
