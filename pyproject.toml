@@ -1,7 +1,7 @@
 [project]
-name = "pynix-shell"
+name = "pynix.sh"
 version = "0.1.0"
-description = "A Python-enhanced shell with seamless Python/shell integration"
+description = "A Python-powered, cross-platform shell with seamless Python/shell integration"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["prompt-toolkit", "pygments"]

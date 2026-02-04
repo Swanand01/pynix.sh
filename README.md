@@ -1,4 +1,4 @@
-# pynix
+# pynix.sh
 
 **pynix** is a Python-powered, cross-platform shell.
 The language is a superset of Python 3 with seamless shell command integration.
