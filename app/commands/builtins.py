@@ -47,6 +47,14 @@ command_docs = {
         "description": "Deactivate the current virtual environment",
         "usage": "deactivate"
     },
+    Command.TRUE: {
+        "description": "Returns success (exit code 0)",
+        "usage": "true"
+    },
+    Command.FALSE: {
+        "description": "Returns failure (exit code 1)",
+        "usage": "false"
+    },
 }
 
 
@@ -101,33 +109,34 @@ def handle_cd(arg, stderr=None):
 
 def handle_activate(args=None):
     """Handle the activate builtin command."""
-    
+
     venv_path = os.path.abspath(expand_path(args[0]) if args else '.venv')
-    bin_dir = os.path.join(venv_path, 'Scripts' if sys.platform == 'win32' else 'bin')
-    
+    bin_dir = os.path.join(
+        venv_path, 'Scripts' if sys.platform == 'win32' else 'bin')
+
     if not os.path.isdir(bin_dir):
         print(f"activate: '{venv_path}' is not a valid virtual environment")
         return False
-    
+
     # Deactivate current venv if active
     if 'VIRTUAL_ENV' in os.environ:
         handle_deactivate()
-    
+
     # Save old PATH for deactivation
     global _venv_oldvars
     _venv_oldvars = {'PATH': os.environ['PATH']}
-    
+
     # Activate: prepend bin to PATH and set VIRTUAL_ENV
     os.environ['PATH'] = bin_dir + os.pathsep + os.environ['PATH']
     os.environ['VIRTUAL_ENV'] = venv_path
     os.environ.pop('PYTHONHOME', None)
-    
+
     return True
 
 
 def handle_deactivate():
     """Handle the deactivate builtin command."""
-    
+
     if 'VIRTUAL_ENV' not in os.environ:
         print("deactivate: no virtual environment is active")
         return False
@@ -137,9 +146,9 @@ def handle_deactivate():
     if _venv_oldvars:
         os.environ.update(_venv_oldvars)
         _venv_oldvars.clear()
-    
+
     del os.environ['VIRTUAL_ENV']
-    
+
     return True
 
 
@@ -252,6 +261,10 @@ def run_builtin(cmd, args, stdout=None, stderr=None):
     elif cmd == Command.DEACTIVATE:
         success = handle_deactivate()
         return (False, 0 if success else 1)
+    elif cmd == Command.TRUE:
+        return (False, 0)
+    elif cmd == Command.FALSE:
+        return (False, 1)
 
     return (False, 0)
 

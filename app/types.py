@@ -14,6 +14,8 @@ class Command(str, Enum):
     ABOUT = 'about'
     ACTIVATE = 'activate'
     DEACTIVATE = 'deactivate'
+    TRUE = 'true'
+    FALSE = 'false'
 
 
 def is_builtin(command):
