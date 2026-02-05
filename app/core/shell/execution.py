@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from io import StringIO
 from ...parsing import parse_pipeline_into_segments, parse_segment, update_quote_state
 from ...types import is_builtin
 from ...commands import execute_builtin
@@ -28,7 +29,31 @@ def split_on_unquoted_newlines(command):
 def execute_shell_captured(pipeline, command):
     """Execute shell command in capture mode, returning output."""
     if len(pipeline) == 1:
-        result = execute_external(pipeline[0], capture=True)
+        segment = pipeline[0]
+        cmd = segment['parts'][0] if segment['parts'] else None
+
+        # Check if builtin first
+        if is_builtin(cmd):
+            has_redirects = segment.get(
+                'stdout_redirs') or segment.get('stderr_redirs')
+
+            if has_redirects:
+                _, returncode = execute_builtin(segment=segment)
+                return returncode, '', ''
+
+            parsed_cmd, args, _, _ = parse_segment(segment)
+            stdout_buffer = StringIO()
+            stderr_buffer = StringIO()
+            _, returncode = execute_builtin(
+                cmd=parsed_cmd,
+                args=args,
+                stdout=stdout_buffer,
+                stderr=stderr_buffer
+            )
+            return returncode, stdout_buffer.getvalue(), stderr_buffer.getvalue()
+
+        # Try external command
+        result = execute_external(segment, capture=True)
         if result is None:
             return 127, '', f"{command}: command not found\n"
         return result

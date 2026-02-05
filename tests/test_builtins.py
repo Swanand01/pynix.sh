@@ -54,6 +54,42 @@ class TestBuiltinCommands(unittest.TestCase):
             # Restore original directory so subsequent tests don't fail
             os.chdir(original_dir)
 
+    def test_builtin_true(self):
+        """Test true builtin returns success."""
+        run_command('result = !(true)')
+        self.assertIn('result', python_namespace)
+        self.assertEqual(python_namespace['result'].returncode, 0)
+
+    def test_builtin_false(self):
+        """Test false builtin returns failure."""
+        run_command('result = !(false)')
+        self.assertIn('result', python_namespace)
+        self.assertEqual(python_namespace['result'].returncode, 1)
+
+    def test_true_with_and_operator(self):
+        """Test true && echo succeeds and runs echo."""
+        run_command('true && echo success')
+        output = sys.stdout.getvalue()
+        self.assertIn('success', output)
+
+    def test_false_with_and_operator(self):
+        """Test false && echo fails and skips echo."""
+        run_command('false && echo should_not_appear')
+        output = sys.stdout.getvalue()
+        self.assertNotIn('should_not_appear', output)
+
+    def test_true_with_or_operator(self):
+        """Test true || echo succeeds and skips echo."""
+        run_command('true || echo should_not_appear')
+        output = sys.stdout.getvalue()
+        self.assertNotIn('should_not_appear', output)
+
+    def test_false_with_or_operator(self):
+        """Test false || echo fails and runs echo."""
+        run_command('false || echo fallback')
+        output = sys.stdout.getvalue()
+        self.assertIn('fallback', output)
+
 
 if __name__ == '__main__':
     unittest.main()
