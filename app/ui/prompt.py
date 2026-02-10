@@ -15,6 +15,7 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from pygments.styles import get_style_by_name
 from .shell_lexer import ShellLexer
 from .completer import ShellCompleter
+from ..parsing.expansions import replace_expansions_with_placeholders
 
 
 # Cache for static prompt parts
@@ -39,8 +40,10 @@ def get_venv_name():
 
 def is_python_code_complete(text):
     """Check if Python code is complete and ready to execute."""
+    modified_text, _ = replace_expansions_with_placeholders(text)
+
     try:
-        return code.compile_command(text) is not None
+        return code.compile_command(modified_text) is not None
     except SyntaxError:
         return True
 
@@ -155,4 +158,6 @@ def create_prompt_session(builtin_commands=None, histfile=None):
         auto_suggest=AutoSuggestFromHistory(),
         history=history,
         prompt_continuation=get_continuation_prompt,
+        enable_system_prompt=False,
+        enable_suspend=False,
     )
